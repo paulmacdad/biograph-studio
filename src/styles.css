@@ -78,6 +78,22 @@ button:hover {
   gap: 7px;
 }
 
+.classic-actions {
+  align-items: center;
+  background: #f5f7f5;
+  border-bottom: 1px solid #cfd6d2;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 8px 18px;
+}
+
+.classic-actions button {
+  background: #ffffff;
+  font-weight: 700;
+  min-height: 34px;
+}
+
 .workbench {
   display: grid;
   flex: 1;
@@ -254,6 +270,69 @@ button:hover {
   font-size: 13px;
 }
 
+.table-kind-panel {
+  background: #ffffff;
+  border: 1px solid #cfd6d2;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.starter-heading {
+  display: grid;
+  gap: 3px;
+}
+
+.starter-heading strong {
+  font-size: 15px;
+}
+
+.table-kind-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.table-kind-grid button {
+  align-items: flex-start;
+  display: grid;
+  gap: 6px;
+  justify-items: stretch;
+  min-height: 86px;
+  text-align: left;
+}
+
+.table-kind-grid button.active {
+  background: #eef5f2;
+  border-color: #155c64;
+  box-shadow: 0 0 0 2px rgba(21, 92, 100, 0.08);
+}
+
+.table-kind-grid button > span:last-child {
+  color: #60706a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.kind-title {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+
+.kind-title em {
+  background: #e8ece9;
+  border-radius: 999px;
+  color: #4e5c57;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  margin-left: auto;
+  padding: 3px 7px;
+}
+
 .assistant-panel {
   background: #ffffff;
   border: 1px solid #cfd6d2;
@@ -372,9 +451,15 @@ select:focus {
 }
 
 .graph-sheet {
-  align-items: center;
+  align-items: stretch;
   display: flex;
   justify-content: center;
+}
+
+.graph-workspace {
+  display: grid;
+  gap: 8px;
+  width: 100%;
 }
 
 .plot {
@@ -667,6 +752,7 @@ select:focus {
 
 @media (max-width: 760px) {
   .topbar,
+  .classic-actions,
   .sheet-heading {
     align-items: stretch;
     flex-direction: column;
@@ -675,6 +761,7 @@ select:focus {
   .analysis-grid,
   .analysis-roadmap,
   .assistant-panel,
+  .table-kind-grid,
   .workflow-strip,
   .navigator {
     grid-template-columns: 1fr;

@@ -9,6 +9,7 @@ This is not a GraphPad Prism clone. It is a legally distinct open tool aimed at 
 - Smart paste import for CSV, TSV, and copied spreadsheet cells
 - Wide, long, column-oriented, and dose/response table detection
 - One-click reshaping actions for wide-to-long, transpose, control normalization, and log10 X conversion
+- Familiar scientific-workbook flow with New Table & Graph, Analyze, Change Graph Type, and Format Graph actions
 - Workbook-style navigator for data, analyses, graphs, layouts, notes, and feature planning
 - Dot, bar, box, line, and dose-response SVG plots
 - Publication graph inspector with axis labels, font sizing, symbols, line width, bar width, grids, points, legends, error bars, multiple palettes, and journal/talk/poster/minimal presets

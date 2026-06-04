@@ -8,6 +8,7 @@ import {
   FlaskConical,
   LineChart,
   Palette,
+  Plus,
   RefreshCw,
   Settings2,
   Sigma,
@@ -68,6 +69,7 @@ type GraphSettings = {
   errorBars: ErrorBars;
 };
 type GraphPreset = 'journal' | 'talk' | 'poster' | 'minimal';
+type TableKind = 'column' | 'grouped' | 'xy' | 'dose' | 'survival' | 'multiple';
 
 const palettes: Record<PaletteId, string[]> = {
   editorial: ['#155c64', '#c84f48', '#514f9f', '#cf8c22', '#2f7d57', '#a83f73', '#4b6b9c', '#7a6a37'],
@@ -113,6 +115,28 @@ const doseSample = `Concentration,Response,Compound
 0.3,90.4,Drug B
 1,96.1,Drug B`;
 
+const xySample = `Time,Response,Series
+0,1.1,Control
+1,1.6,Control
+2,2.0,Control
+3,2.4,Control
+4,2.7,Control
+0,1.2,Treated
+1,2.1,Treated
+2,3.4,Treated
+3,4.8,Treated
+4,5.9,Treated`;
+
+const survivalSample = `Time,Event,Group
+0,0,Control
+4,1,Control
+8,1,Control
+12,0,Control
+0,0,Treated
+6,1,Treated
+10,0,Treated
+14,1,Treated`;
+
 const graphModes: Array<{ id: GraphMode; label: string; icon: typeof BarChart3 }> = [
   { id: 'scatter', label: 'Dot', icon: Sparkles },
   { id: 'bar', label: 'Bar', icon: BarChart3 },
@@ -137,6 +161,15 @@ const graphPresets: Array<{ id: GraphPreset; label: string; detail: string }> = 
   { id: 'talk', label: 'Talk', detail: 'Larger text and symbols for slides.' },
   { id: 'poster', label: 'Poster', detail: 'High contrast and wider marks.' },
   { id: 'minimal', label: 'Minimal', detail: 'Clean axis-first figure with no grid.' },
+];
+
+const tableKinds: Array<{ id: TableKind; label: string; detail: string; status: string }> = [
+  { id: 'column', label: 'Column', detail: 'One variable across treatments; t tests, ANOVA, nonparametric tests.', status: 'Ready' },
+  { id: 'grouped', label: 'Grouped', detail: 'Rows are treatments, columns are replicates or subcolumns.', status: 'Ready' },
+  { id: 'xy', label: 'XY', detail: 'X values with one or more Y series; lines and regression.', status: 'Ready' },
+  { id: 'dose', label: 'Dose-response', detail: 'Concentration-response data with grouped compounds.', status: 'Ready' },
+  { id: 'survival', label: 'Survival', detail: 'Kaplan-Meier style time/event data; engine target.', status: 'Engine soon' },
+  { id: 'multiple', label: 'Multiple variables', detail: 'Clinical/sample metadata with many measured variables.', status: 'Engine soon' },
 ];
 
 function splitRows(text: string) {
@@ -561,6 +594,47 @@ function applyGraphPreset(preset: GraphPreset, setSetting: <K extends keyof Grap
   }
 }
 
+function tableKindDefaults(kind: TableKind) {
+  if (kind === 'xy') {
+    return {
+      data: xySample,
+      graphMode: 'line' as GraphMode,
+      analysisType: 'linear' as AnalysisType,
+      title: 'Response over time',
+      xLabel: 'Time',
+      yLabel: 'Response',
+    };
+  }
+  if (kind === 'dose') {
+    return {
+      data: doseSample,
+      graphMode: 'dose' as GraphMode,
+      analysisType: 'dose' as AnalysisType,
+      title: 'Dose response by compound',
+      xLabel: 'Concentration',
+      yLabel: 'Response',
+    };
+  }
+  if (kind === 'survival') {
+    return {
+      data: survivalSample,
+      graphMode: 'line' as GraphMode,
+      analysisType: 'auto' as AnalysisType,
+      title: 'Survival by group',
+      xLabel: 'Time',
+      yLabel: 'Survival probability',
+    };
+  }
+  return {
+    data: groupedSample,
+    graphMode: kind === 'column' ? ('scatter' as GraphMode) : ('bar' as GraphMode),
+    analysisType: 'auto' as AnalysisType,
+    title: kind === 'column' ? 'Column data by treatment' : 'Grouped data by treatment',
+    xLabel: 'Condition',
+    yLabel: 'Response',
+  };
+}
+
 function Plot({ groups, mode, settings }: { groups: CleanGroup[]; mode: GraphMode; settings: GraphSettings }) {
   const stats = summaries(groups);
   const width = 900;
@@ -744,6 +818,7 @@ export default function App() {
   const [activeSheet, setActiveSheet] = useState<Sheet>('graph');
   const [graphMode, setGraphMode] = useState<GraphMode>('scatter');
   const [analysisType, setAnalysisType] = useState<AnalysisType>('auto');
+  const [tableKind, setTableKind] = useState<TableKind>('grouped');
   const [assistantPrompt, setAssistantPrompt] = useState('Turn this into the right table for a grouped bar graph with raw points.');
   const [settings, setSettings] = useState<GraphSettings>(defaultSettings);
   const clean = useMemo(() => parseSmartInput(rawData, settings.palette), [rawData, settings.palette]);
@@ -759,6 +834,17 @@ export default function App() {
   };
   const exportJson = () => {
     download('biograph-studio-analysis.json', JSON.stringify({ settings, graphMode, analysisType, import: clean, summaries: stats, analysis }, null, 2), 'application/json');
+  };
+  const applyTableKind = (kind: TableKind) => {
+    const defaults = tableKindDefaults(kind);
+    setTableKind(kind);
+    setRawData(defaults.data);
+    setGraphMode(defaults.graphMode);
+    setAnalysisType(defaults.analysisType);
+    setSetting('title', defaults.title);
+    setSetting('xLabel', defaults.xLabel);
+    setSetting('yLabel', defaults.yLabel);
+    setActiveSheet('data');
   };
 
   return (
@@ -800,6 +886,24 @@ export default function App() {
           </button>
         </div>
       </header>
+      <nav className="classic-actions" aria-label="Classic workbook actions">
+        <button onClick={() => setActiveSheet('data')}>
+          <Plus size={17} />
+          New Table & Graph
+        </button>
+        <button onClick={() => setActiveSheet('analysis')}>
+          <Sigma size={17} />
+          Analyze
+        </button>
+        <button onClick={() => setActiveSheet('graph')}>
+          <BarChart3 size={17} />
+          Change Graph Type
+        </button>
+        <button onClick={() => setActiveSheet('graph')}>
+          <Settings2 size={17} />
+          Format Graph
+        </button>
+      </nav>
 
       <section className="workbench">
         <aside className="navigator">
@@ -853,13 +957,36 @@ export default function App() {
           {activeSheet === 'data' && (
             <div className="data-sheet">
               <div className="sheet-heading">
-                <h2>Smart Data Table</h2>
+                <h2>New Table & Graph</h2>
                 <span>{clean.format}</span>
+              </div>
+              <div className="table-kind-panel">
+                <div className="starter-heading">
+                  <span className="eyebrow">Choose table type</span>
+                  <strong>Start the way scientific graphing users expect.</strong>
+                </div>
+                <div className="table-kind-grid">
+                  {tableKinds.map((kind) => (
+                    <button
+                      key={kind.id}
+                      aria-label={`${kind.label} table. ${kind.detail} ${kind.status}.`}
+                      className={tableKind === kind.id ? 'active' : ''}
+                      onClick={() => applyTableKind(kind.id)}
+                    >
+                      <span className="kind-title">
+                        <Table2 size={15} />
+                        <strong>{kind.label}</strong>
+                        <em>{kind.status}</em>
+                      </span>
+                      <span>{kind.detail}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="assistant-panel">
                 <div>
-                  <span className="eyebrow">AI import assistant</span>
-                  <strong>Paste first. Let the app shape it.</strong>
+                  <span className="eyebrow">Smart import assistant</span>
+                  <strong>Paste anything. Keep the workbook shape familiar.</strong>
                   <p>This is the front-end contract for a future AI parser: infer roles, clean labels, reshape tables, and explain the statistical consequences before anything is plotted.</p>
                 </div>
                 <label>
@@ -907,7 +1034,7 @@ export default function App() {
           {activeSheet === 'analysis' && (
             <div className="analysis-sheet">
               <div className="sheet-heading">
-                <h2>Analysis Results</h2>
+                <h2>Analyze Data</h2>
                 <span>{analysis?.label ?? 'No compatible test yet'}</span>
               </div>
               <div className="analysis-grid">
@@ -949,7 +1076,13 @@ export default function App() {
 
           {activeSheet === 'graph' && (
             <div className="graph-sheet">
-              {clean.groups.length > 0 ? <Plot groups={clean.groups} mode={graphMode} settings={settings} /> : <div className="empty-state">No plottable numeric groups detected.</div>}
+              <div className="graph-workspace">
+                <div className="sheet-heading">
+                  <h2>Change Graph Type</h2>
+                  <span>Linked to the selected data table</span>
+                </div>
+                {clean.groups.length > 0 ? <Plot groups={clean.groups} mode={graphMode} settings={settings} /> : <div className="empty-state">No plottable numeric groups detected.</div>}
+              </div>
             </div>
           )}
 

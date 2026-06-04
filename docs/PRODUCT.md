@@ -5,6 +5,8 @@ The product goal is a free scientific graphing and statistics workbook for biolo
 ## What Must Feel Familiar
 
 - A project/workbook with data tables, analyses, graphs, layouts, and notes.
+- A "new table and graph" starting point where users choose Column, Grouped, XY, Dose-response, Survival, or Multiple-variable data before doing anything else.
+- Obvious top-level actions: New Table & Graph, Analyze, Change Graph Type, Format Graph, Export.
 - Graph-first feedback: users should see a useful figure almost immediately after pasting data.
 - Guided stats: the app should recommend plausible analyses and explain why.
 - Publication-quality defaults with direct control over axes, symbols, bars, legends, labels, error bars, palettes, and export sizes.
