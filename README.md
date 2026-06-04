@@ -1,0 +1,42 @@
+# BioGraph Studio
+
+A free, browser-based scientific plotting and beginner-friendly statistics prototype for wet-lab data.
+
+This is not a GraphPad Prism clone. It is a legally distinct open tool aimed at the same common workflow pain points: messy spreadsheet paste, grouped biological measurements, quick statistical checks, publication-style SVG export, and reproducible cleaned data export.
+
+## Current Prototype
+
+- Smart paste import for CSV, TSV, and copied spreadsheet cells
+- Wide, long, column-oriented, and dose/response table detection
+- Workbook-style navigator for data, analyses, graphs, layouts, notes, and feature planning
+- Dot, bar, box, line, and dose-response SVG plots
+- Publication graph inspector with axis labels, font sizing, symbols, line width, bar width, grids, points, legends, error bars, and multiple palettes
+- Per-group n, mean, SD, SEM, 95% CI, median, quartiles, min, and max
+- Welch unpaired t test, paired t test, Mann-Whitney test, one-way ANOVA, Kruskal-Wallis test, linear regression, and rough dose-response estimates
+- Cleaned CSV, SVG figure, and JSON analysis export
+
+## Research Notes
+
+Public Prism material emphasizes simplified scientific statistics, biology-friendly table formats, t tests, ANOVA, regression, dose-response, survival analysis, PCA, and guided assumptions. Current public pricing/licensing changes are a major user complaint in lab communities. Existing alternatives include general open-source tools such as R and LabPlot, plus browser graphing tools such as TechGraphOnline and newer reproducible-code-focused tools.
+
+The gap this prototype targets first is not just "more statistical power"; it is less manual data reshaping for non-statisticians plus a more direct path from messy lab output to beautiful, reproducible figures.
+
+## Run Locally
+
+```bash
+npm install
+npm run dev
+```
+
+Then open the local URL printed by Vite.
+
+## Next Build Targets
+
+- Optional AI import assistant with a server-side API key, never a browser-exposed key
+- Full nonlinear regression engine with IC50/EC50, binding, kinetics, enzyme models, constraints, confidence intervals, and residual diagnostics
+- Multiple-comparison corrections after ANOVA, including Tukey, Dunnett, Holm-Sidak, Bonferroni, FDR, and Games-Howell style workflows
+- Two-way, three-way, repeated-measures, mixed-effects, nested, and multiple-variable analyses
+- Kaplan-Meier survival analysis, log-rank/Gehan-Wilcoxon tests, logistic regression, PCA, transformations, outlier detection, and normality checks
+- qPCR, ELISA, Western blot, and viability assay templates
+- Project files that save raw data, cleaned data, analysis choices, and graph styling together
+- PNG/PDF export and PowerPoint-friendly figure sizing
