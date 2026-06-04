@@ -67,6 +67,7 @@ type GraphSettings = {
   showLegend: boolean;
   errorBars: ErrorBars;
 };
+type GraphPreset = 'journal' | 'talk' | 'poster' | 'minimal';
 
 const palettes: Record<PaletteId, string[]> = {
   editorial: ['#155c64', '#c84f48', '#514f9f', '#cf8c22', '#2f7d57', '#a83f73', '#4b6b9c', '#7a6a37'],
@@ -129,6 +130,13 @@ const analyses: Array<{ id: AnalysisType; label: string; detail: string }> = [
   { id: 'kruskal', label: 'Kruskal-Wallis', detail: 'Nonparametric multi-group comparison.' },
   { id: 'linear', label: 'Linear regression', detail: 'For XY or long dose tables.' },
   { id: 'dose', label: 'Dose response', detail: 'Four-parameter logistic estimate.' },
+];
+
+const graphPresets: Array<{ id: GraphPreset; label: string; detail: string }> = [
+  { id: 'journal', label: 'Journal', detail: 'Compact text, raw points, restrained grid.' },
+  { id: 'talk', label: 'Talk', detail: 'Larger text and symbols for slides.' },
+  { id: 'poster', label: 'Poster', detail: 'High contrast and wider marks.' },
+  { id: 'minimal', label: 'Minimal', detail: 'Clean axis-first figure with no grid.' },
 ];
 
 function splitRows(text: string) {
@@ -451,6 +459,108 @@ function buildCsv(groups: CleanGroup[]) {
   return lines.join('\n');
 }
 
+function escapeCsv(value: string | number) {
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function wideToLong(text: string) {
+  const rows = splitRows(text);
+  if (rows.length < 2) return text;
+  const header = rows[0];
+  const lines = ['Group,Replicate,Value'];
+  for (const row of rows.slice(1)) {
+    const group = row[0] || 'Untitled';
+    row.slice(1).forEach((cell, index) => {
+      const value = toNumber(cell);
+      if (Number.isFinite(value)) lines.push([escapeCsv(group), escapeCsv(header[index + 1] || `Rep ${index + 1}`), value].join(','));
+    });
+  }
+  return lines.join('\n');
+}
+
+function transposeTable(text: string) {
+  const rows = splitRows(text);
+  const width = Math.max(...rows.map((row) => row.length), 0);
+  return Array.from({ length: width }, (_, columnIndex) => rows.map((row) => escapeCsv(row[columnIndex] ?? '')).join(',')).join('\n');
+}
+
+function normalizeToFirstGroup(groups: CleanGroup[]) {
+  if (!groups.length) return '';
+  const controlMean = mean(groups[0].values);
+  if (!Number.isFinite(controlMean) || controlMean === 0) return '';
+  const maxLength = Math.max(...groups.map((group) => group.values.length), 0);
+  const lines = [groups.map((group) => escapeCsv(group.name)).join(',')];
+  for (let index = 0; index < maxLength; index += 1) {
+    lines.push(groups.map((group) => (group.values[index] === undefined ? '' : fmt((group.values[index] / controlMean) * 100))).join(','));
+  }
+  return lines.join('\n');
+}
+
+function log10FirstNumericColumn(text: string) {
+  const rows = splitRows(text);
+  if (rows.length < 2) return text;
+  const header = [...rows[0]];
+  const columnIndex = header.findIndex((cell) => /dose|conc|concentration|x|time/i.test(cell));
+  const target = columnIndex >= 0 ? columnIndex : rows[1].findIndex(looksNumeric);
+  if (target < 0) return text;
+  header[target] = `log10(${header[target] || 'X'})`;
+  return [
+    header.map(escapeCsv).join(','),
+    ...rows.slice(1).map((row) => {
+      const copy = [...row];
+      const value = toNumber(copy[target] || '');
+      copy[target] = value > 0 ? fmt(Math.log10(value)) : copy[target];
+      return copy.map(escapeCsv).join(',');
+    }),
+  ].join('\n');
+}
+
+function importSuggestions(clean: CleanResult) {
+  const suggestions = [`Detected ${clean.groups.length} data set${clean.groups.length === 1 ? '' : 's'} as ${clean.format.toLowerCase()}.`];
+  if (clean.format.includes('Wide table')) suggestions.push('This is good for grouped scatter, bars, box plots, t tests, and ANOVA.');
+  if (clean.roles.x) suggestions.push(`Use ${clean.roles.x} as X and ${clean.roles.y ?? 'response'} as Y for XY, dose-response, and regression graphs.`);
+  if (clean.groups.length === 2) suggestions.push('Two groups detected: unpaired, paired, or nonparametric comparisons are available.');
+  if (clean.groups.length > 2) suggestions.push('Three or more groups detected: ANOVA and Kruskal-Wallis are available now; post-tests belong in the engine roadmap.');
+  if (clean.warnings.length) suggestions.push(...clean.warnings);
+  return suggestions;
+}
+
+function applyGraphPreset(preset: GraphPreset, setSetting: <K extends keyof GraphSettings>(key: K, value: GraphSettings[K]) => void) {
+  if (preset === 'journal') {
+    setSetting('fontSize', 12);
+    setSetting('symbolSize', 5);
+    setSetting('lineWidth', 1.8);
+    setSetting('showGrid', true);
+    setSetting('showPoints', true);
+    setSetting('palette', 'editorial');
+  }
+  if (preset === 'talk') {
+    setSetting('fontSize', 16);
+    setSetting('symbolSize', 8);
+    setSetting('lineWidth', 3);
+    setSetting('showGrid', false);
+    setSetting('showPoints', true);
+    setSetting('palette', 'bright');
+  }
+  if (preset === 'poster') {
+    setSetting('fontSize', 18);
+    setSetting('symbolSize', 9);
+    setSetting('lineWidth', 3.6);
+    setSetting('barWidth', 0.68);
+    setSetting('showLegend', true);
+    setSetting('palette', 'colourblind');
+  }
+  if (preset === 'minimal') {
+    setSetting('fontSize', 13);
+    setSetting('symbolSize', 6);
+    setSetting('lineWidth', 2);
+    setSetting('showGrid', false);
+    setSetting('showLegend', false);
+    setSetting('palette', 'mono');
+  }
+}
+
 function Plot({ groups, mode, settings }: { groups: CleanGroup[]; mode: GraphMode; settings: GraphSettings }) {
   const stats = summaries(groups);
   const width = 900;
@@ -634,10 +744,12 @@ export default function App() {
   const [activeSheet, setActiveSheet] = useState<Sheet>('graph');
   const [graphMode, setGraphMode] = useState<GraphMode>('scatter');
   const [analysisType, setAnalysisType] = useState<AnalysisType>('auto');
+  const [assistantPrompt, setAssistantPrompt] = useState('Turn this into the right table for a grouped bar graph with raw points.');
   const [settings, setSettings] = useState<GraphSettings>(defaultSettings);
   const clean = useMemo(() => parseSmartInput(rawData, settings.palette), [rawData, settings.palette]);
   const stats = useMemo(() => summaries(clean.groups), [clean.groups]);
   const analysis = useMemo(() => runAnalysis(analysisType, clean.groups), [analysisType, clean.groups]);
+  const suggestions = useMemo(() => importSuggestions(clean), [clean]);
   const setSetting = <K extends keyof GraphSettings>(key: K, value: GraphSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
 
   const exportSvg = () => {
@@ -712,6 +824,20 @@ export default function App() {
         </aside>
 
         <section className="main-sheet">
+          <div className="workflow-strip" aria-label="Workflow">
+            {[
+              ['1', 'Paste data', clean.rows.length ? 'done' : 'todo'],
+              ['2', 'Choose analysis', analysis ? 'done' : 'todo'],
+              ['3', 'Style graph', clean.groups.length ? 'done' : 'todo'],
+              ['4', 'Export figure', 'ready'],
+            ].map(([step, label, state]) => (
+              <div key={step} className={state}>
+                <strong>{step}</strong>
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+
           <div className="sheet-tabs" role="tablist" aria-label="Graph style">
             {graphModes.map((mode) => {
               const Icon = mode.icon;
@@ -729,6 +855,41 @@ export default function App() {
               <div className="sheet-heading">
                 <h2>Smart Data Table</h2>
                 <span>{clean.format}</span>
+              </div>
+              <div className="assistant-panel">
+                <div>
+                  <span className="eyebrow">AI import assistant</span>
+                  <strong>Paste first. Let the app shape it.</strong>
+                  <p>This is the front-end contract for a future AI parser: infer roles, clean labels, reshape tables, and explain the statistical consequences before anything is plotted.</p>
+                </div>
+                <label>
+                  Assistant instruction
+                  <input value={assistantPrompt} onChange={(event) => setAssistantPrompt(event.target.value)} />
+                </label>
+                <div className="assistant-actions">
+                  <button onClick={() => setRawData(wideToLong(rawData))}>Wide to long</button>
+                  <button onClick={() => setRawData(transposeTable(rawData))}>Transpose</button>
+                  <button
+                    onClick={() => {
+                      const normalized = normalizeToFirstGroup(clean.groups);
+                      if (normalized) {
+                        setRawData(normalized);
+                        setSetting('yLabel', `% of ${clean.groups[0]?.name ?? 'control'}`);
+                      }
+                    }}
+                  >
+                    Normalize to first group
+                  </button>
+                  <button onClick={() => setRawData(log10FirstNumericColumn(rawData))}>Log10 X</button>
+                </div>
+              </div>
+              <div className="suggestion-list">
+                {suggestions.map((suggestion) => (
+                  <div key={suggestion}>
+                    <Sparkles size={14} />
+                    <span>{suggestion}</span>
+                  </div>
+                ))}
               </div>
               <textarea value={rawData} onChange={(event) => setRawData(event.target.value)} spellCheck={false} aria-label="Raw pasted table" />
               <div className="table-preview">
@@ -770,6 +931,18 @@ export default function App() {
                 ) : (
                   <span>This analysis is not compatible with the current table.</span>
                 )}
+              </div>
+              <div className="analysis-roadmap">
+                {[
+                  ['Implemented in-browser', 'Descriptives, t tests, Mann-Whitney, one-way ANOVA, Kruskal-Wallis, linear regression, dose estimates.'],
+                  ['Next statistical engine', 'Multiple comparisons, two-way/repeated-measures/mixed-effects models, nonlinear regression, survival, PCA.'],
+                  ['AI guidance layer', 'Explains assumptions, suggests tests, reshapes tables, writes methods text, and flags design problems before analysis.'],
+                ].map(([title, detail]) => (
+                  <div key={title}>
+                    <strong>{title}</strong>
+                    <span>{detail}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -869,10 +1042,24 @@ export default function App() {
               <span key={color} style={{ background: color }} />
             ))}
           </div>
+          <div className="preset-panel">
+            <span className="eyebrow">Graph presets</span>
+            {graphPresets.map((preset) => (
+              <button key={preset.id} onClick={() => applyGraphPreset(preset.id, setSetting)}>
+                <strong>{preset.label}</strong>
+                <span>{preset.detail}</span>
+              </button>
+            ))}
+          </div>
           <div className="result-panel compact">
             <span className="eyebrow">Suggested analysis</span>
             <strong>{analysis?.label ?? 'No result yet'}</strong>
             <span>{analysis ? pLabel(analysis.p) : clean.format}</span>
+          </div>
+          <div className="engine-panel">
+            <span className="eyebrow">Stats engine</span>
+            <strong>Browser now, R/Python later</strong>
+            <span>Current tests run in JavaScript. The API boundary is designed so R, Python, or WebAssembly engines can replace or extend calculations without changing the UI.</span>
           </div>
         </aside>
       </section>

@@ -157,6 +157,54 @@ button:hover {
   padding: 14px 16px 18px;
 }
 
+.workflow-strip {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+
+.workflow-strip div {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #ccd5d0;
+  border-radius: 8px;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.workflow-strip strong {
+  align-items: center;
+  background: #155c64;
+  border-radius: 50%;
+  color: #ffffff;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 12px;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
+}
+
+.workflow-strip span {
+  color: #4f5d57;
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-strip .todo strong {
+  background: #8b9691;
+}
+
+.workflow-strip .ready strong {
+  background: #cf8c22;
+}
+
 .sheet-tabs {
   align-items: center;
   background: #dfe6e2;
@@ -204,6 +252,75 @@ button:hover {
 .sheet-heading span {
   color: #64716b;
   font-size: 13px;
+}
+
+.assistant-panel {
+  background: #ffffff;
+  border: 1px solid #cfd6d2;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.95fr);
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.assistant-panel strong {
+  display: block;
+  font-size: 15px;
+  margin-top: 3px;
+}
+
+.assistant-panel p {
+  color: #60706a;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 6px 0 0;
+}
+
+.assistant-panel label {
+  color: #4f5d57;
+  display: grid;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.assistant-panel input {
+  border: 1px solid #c8d1cc;
+  border-radius: 7px;
+  min-height: 34px;
+  outline: none;
+  padding: 7px 9px;
+}
+
+.assistant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  grid-column: 1 / -1;
+}
+
+.assistant-actions button {
+  min-height: 32px;
+}
+
+.suggestion-list {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.suggestion-list div {
+  align-items: center;
+  background: #eef5f2;
+  border: 1px solid #cddfd8;
+  border-radius: 7px;
+  color: #42524c;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  padding: 8px 10px;
 }
 
 textarea {
@@ -334,6 +451,28 @@ select:focus {
   line-height: 1.35;
 }
 
+.analysis-roadmap {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.analysis-roadmap div {
+  background: #ffffff;
+  border: 1px solid #cfd6d2;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.analysis-roadmap span {
+  color: #60706a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .result-panel {
   background: #ffffff;
   border: 1px solid #cfd6d2;
@@ -442,6 +581,33 @@ select:focus {
   width: 17px;
 }
 
+.preset-panel,
+.engine-panel {
+  background: #ffffff;
+  border: 1px solid #cfd6d2;
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 11px;
+}
+
+.preset-panel button {
+  align-items: flex-start;
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  min-height: 48px;
+  text-align: left;
+}
+
+.preset-panel button span,
+.engine-panel span {
+  color: #60706a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .placeholder-sheet,
 .feature-map {
   background: #ffffff;
@@ -507,6 +673,9 @@ select:focus {
   }
 
   .analysis-grid,
+  .analysis-roadmap,
+  .assistant-panel,
+  .workflow-strip,
   .navigator {
     grid-template-columns: 1fr;
   }
