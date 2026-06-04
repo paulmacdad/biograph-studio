@@ -245,7 +245,6 @@ button:hover {
 .data-sheet,
 .analysis-sheet,
 .graph-sheet,
-.placeholder-sheet,
 .feature-map {
   min-width: 0;
 }
@@ -259,7 +258,6 @@ button:hover {
 }
 
 .sheet-heading h2,
-.placeholder-sheet h2,
 .feature-map h2 {
   font-size: 18px;
   margin: 0;
@@ -331,6 +329,53 @@ button:hover {
   font-weight: 800;
   margin-left: auto;
   padding: 3px 7px;
+}
+
+.setup-grid {
+  border-top: 1px solid #edf0ee;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  padding-top: 10px;
+}
+
+.stepper-row {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 1fr 30px 54px 30px;
+}
+
+.stepper-row span {
+  color: #4f5d57;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.stepper-row button {
+  min-height: 30px;
+  padding: 0;
+}
+
+.stepper-row input {
+  border: 1px solid #c8d1cc;
+  border-radius: 7px;
+  min-height: 30px;
+  padding: 4px 6px;
+  text-align: center;
+  width: 100%;
+}
+
+.primary-action {
+  background: #155c64;
+  border-color: #155c64;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.primary-action:hover {
+  background: #104950;
+  color: #ffffff;
 }
 
 .assistant-panel {
@@ -693,7 +738,8 @@ select:focus {
   line-height: 1.35;
 }
 
-.placeholder-sheet,
+.layout-sheet,
+.notes-sheet,
 .feature-map {
   background: #ffffff;
   border: 1px solid #cfd6d2;
@@ -702,9 +748,58 @@ select:focus {
   padding: 18px;
 }
 
-.placeholder-sheet p {
-  line-height: 1.55;
-  max-width: 760px;
+.layout-grid,
+.audit-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.layout-grid button {
+  align-items: flex-start;
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  min-height: 88px;
+  text-align: left;
+}
+
+.layout-grid span,
+.layout-preview span,
+.audit-grid span {
+  color: #60706a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.layout-preview {
+  background: #f5f7f5;
+  border: 1px solid #d7dfda;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.layout-preview div,
+.audit-grid div {
+  background: #ffffff;
+  border: 1px solid #e1e7e3;
+  border-radius: 7px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.notes-sheet textarea {
+  min-height: 220px;
+}
+
+.audit-grid {
+  margin-top: 12px;
 }
 
 .feature-map {
@@ -761,6 +856,10 @@ select:focus {
   .analysis-grid,
   .analysis-roadmap,
   .assistant-panel,
+  .audit-grid,
+  .layout-grid,
+  .layout-preview,
+  .setup-grid,
   .table-kind-grid,
   .workflow-strip,
   .navigator {

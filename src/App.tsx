@@ -15,6 +15,7 @@ import {
   Sparkles,
   Table2,
 } from 'lucide-react';
+import type { PointerEvent } from 'react';
 import { useMemo, useState } from 'react';
 
 type Sheet = 'data' | 'analysis' | 'graph' | 'layout' | 'notes' | 'map';
@@ -70,6 +71,14 @@ type GraphSettings = {
 };
 type GraphPreset = 'journal' | 'talk' | 'poster' | 'minimal';
 type TableKind = 'column' | 'grouped' | 'xy' | 'dose' | 'survival' | 'multiple';
+type TableSetup = {
+  groups: number;
+  replicates: number;
+  subcolumns: number;
+  xPoints: number;
+  paired: boolean;
+  repeatedMeasures: boolean;
+};
 
 const palettes: Record<PaletteId, string[]> = {
   editorial: ['#155c64', '#c84f48', '#514f9f', '#cf8c22', '#2f7d57', '#a83f73', '#4b6b9c', '#7a6a37'],
@@ -171,6 +180,15 @@ const tableKinds: Array<{ id: TableKind; label: string; detail: string; status: 
   { id: 'survival', label: 'Survival', detail: 'Kaplan-Meier style time/event data; engine target.', status: 'Engine soon' },
   { id: 'multiple', label: 'Multiple variables', detail: 'Clinical/sample metadata with many measured variables.', status: 'Engine soon' },
 ];
+
+const defaultSetup: TableSetup = {
+  groups: 3,
+  replicates: 4,
+  subcolumns: 1,
+  xPoints: 6,
+  paired: false,
+  repeatedMeasures: false,
+};
 
 function splitRows(text: string) {
   return text
@@ -594,10 +612,104 @@ function applyGraphPreset(preset: GraphPreset, setSetting: <K extends keyof Grap
   }
 }
 
-function tableKindDefaults(kind: TableKind) {
+function defaultSetupForKind(kind: TableKind): TableSetup {
+  if (kind === 'xy' || kind === 'dose') return { groups: 2, replicates: 3, subcolumns: 1, xPoints: 7, paired: false, repeatedMeasures: true };
+  if (kind === 'survival') return { groups: 2, replicates: 8, subcolumns: 1, xPoints: 6, paired: false, repeatedMeasures: false };
+  if (kind === 'multiple') return { groups: 2, replicates: 6, subcolumns: 4, xPoints: 1, paired: false, repeatedMeasures: false };
+  return defaultSetup;
+}
+
+function groupName(index: number) {
+  if (index === 0) return 'Control';
+  if (index === 1) return 'Treatment A';
+  if (index === 2) return 'Treatment B';
+  return `Treatment ${index + 1}`;
+}
+
+function syntheticValue(groupIndex: number, replicateIndex: number, subIndex = 0) {
+  const base = 4.2 + groupIndex * 0.85 + subIndex * 0.35;
+  const wobble = ((replicateIndex % 3) - 1) * 0.22 + Math.sin((groupIndex + 1) * (replicateIndex + 2)) * 0.12;
+  return fmt(base + wobble);
+}
+
+function generateTable(kind: TableKind, setup: TableSetup) {
+  const groups = Math.max(1, Math.min(setup.groups, 12));
+  const replicates = Math.max(1, Math.min(setup.replicates, 24));
+  const subcolumns = Math.max(1, Math.min(setup.subcolumns, 8));
+  const xPoints = Math.max(2, Math.min(setup.xPoints, 24));
+
+  if (kind === 'xy') {
+    const lines = ['Time,Response,Series'];
+    for (let groupIndex = 0; groupIndex < groups; groupIndex += 1) {
+      for (let xIndex = 0; xIndex < xPoints; xIndex += 1) {
+        const value = 1 + groupIndex * 0.45 + xIndex * (0.55 + groupIndex * 0.16) + Math.sin(xIndex + groupIndex) * 0.1;
+        lines.push([xIndex, fmt(value), groupName(groupIndex)].join(','));
+      }
+    }
+    return lines.join('\n');
+  }
+
+  if (kind === 'dose') {
+    const doses = Array.from({ length: xPoints }, (_, index) => 10 ** (-3 + index * (3 / Math.max(xPoints - 1, 1))));
+    const lines = ['Concentration,Response,Compound'];
+    for (let groupIndex = 0; groupIndex < groups; groupIndex += 1) {
+      const ec50 = 0.035 + groupIndex * 0.04;
+      for (const dose of doses) {
+        const response = 5 + 92 / (1 + (ec50 / dose) ** 1.15);
+        lines.push([fmt(dose), fmt(response), groupName(groupIndex)].join(','));
+      }
+    }
+    return lines.join('\n');
+  }
+
+  if (kind === 'survival') {
+    const lines = ['Time,Event,Group'];
+    for (let groupIndex = 0; groupIndex < groups; groupIndex += 1) {
+      for (let replicateIndex = 0; replicateIndex < replicates; replicateIndex += 1) {
+        const time = 2 + replicateIndex * 2 + groupIndex;
+        const event = replicateIndex % 4 === 0 ? 0 : 1;
+        lines.push([time, event, groupName(groupIndex)].join(','));
+      }
+    }
+    return lines.join('\n');
+  }
+
+  if (kind === 'multiple') {
+    const headers = ['Sample', 'Group', ...Array.from({ length: subcolumns }, (_, index) => `Variable ${index + 1}`)];
+    const lines = [headers.join(',')];
+    for (let groupIndex = 0; groupIndex < groups; groupIndex += 1) {
+      for (let replicateIndex = 0; replicateIndex < replicates; replicateIndex += 1) {
+        lines.push([
+          `${groupName(groupIndex).replace(/\s+/g, '')}-${replicateIndex + 1}`,
+          groupName(groupIndex),
+          ...Array.from({ length: subcolumns }, (_, subIndex) => syntheticValue(groupIndex, replicateIndex, subIndex)),
+        ].join(','));
+      }
+    }
+    return lines.join('\n');
+  }
+
+  if (kind === 'column') {
+    const headers = Array.from({ length: groups }, (_, index) => groupName(index));
+    const lines = [headers.join(',')];
+    for (let replicateIndex = 0; replicateIndex < replicates; replicateIndex += 1) {
+      lines.push(headers.map((_, groupIndex) => syntheticValue(groupIndex, replicateIndex)).join(','));
+    }
+    return lines.join('\n');
+  }
+
+  const headers = ['Condition', ...Array.from({ length: replicates * subcolumns }, (_, index) => `Rep ${index + 1}`)];
+  const lines = [headers.join(',')];
+  for (let groupIndex = 0; groupIndex < groups; groupIndex += 1) {
+    lines.push([groupName(groupIndex), ...Array.from({ length: replicates * subcolumns }, (_, replicateIndex) => syntheticValue(groupIndex, replicateIndex))].join(','));
+  }
+  return lines.join('\n');
+}
+
+function tableKindDefaults(kind: TableKind, setup = defaultSetupForKind(kind)) {
   if (kind === 'xy') {
     return {
-      data: xySample,
+      data: generateTable(kind, setup),
       graphMode: 'line' as GraphMode,
       analysisType: 'linear' as AnalysisType,
       title: 'Response over time',
@@ -607,7 +719,7 @@ function tableKindDefaults(kind: TableKind) {
   }
   if (kind === 'dose') {
     return {
-      data: doseSample,
+      data: generateTable(kind, setup),
       graphMode: 'dose' as GraphMode,
       analysisType: 'dose' as AnalysisType,
       title: 'Dose response by compound',
@@ -617,7 +729,7 @@ function tableKindDefaults(kind: TableKind) {
   }
   if (kind === 'survival') {
     return {
-      data: survivalSample,
+      data: generateTable(kind, setup),
       graphMode: 'line' as GraphMode,
       analysisType: 'auto' as AnalysisType,
       title: 'Survival by group',
@@ -626,7 +738,7 @@ function tableKindDefaults(kind: TableKind) {
     };
   }
   return {
-    data: groupedSample,
+    data: generateTable(kind, setup),
     graphMode: kind === 'column' ? ('scatter' as GraphMode) : ('bar' as GraphMode),
     analysisType: 'auto' as AnalysisType,
     title: kind === 'column' ? 'Column data by treatment' : 'Grouped data by treatment',
@@ -813,13 +925,35 @@ function RangeRow({ label, value, min, max, step, onChange }: { label: string; v
   );
 }
 
+function StepperRow({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
+  const setClamped = (next: number) => onChange(Math.max(min, Math.min(max, next)));
+  const step = (next: number) => (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setClamped(next);
+  };
+  return (
+    <div className="stepper-row" role="group" aria-label={label}>
+      <span>{label}</span>
+      <button type="button" onPointerDown={step(value - 1)} aria-label={`Decrease ${label}`}>
+        -
+      </button>
+      <input type="number" min={min} max={max} value={value} onChange={(event) => setClamped(Number(event.target.value))} />
+      <button type="button" onPointerDown={step(value + 1)} aria-label={`Increase ${label}`}>
+        +
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const [rawData, setRawData] = useState(groupedSample);
   const [activeSheet, setActiveSheet] = useState<Sheet>('graph');
   const [graphMode, setGraphMode] = useState<GraphMode>('scatter');
   const [analysisType, setAnalysisType] = useState<AnalysisType>('auto');
   const [tableKind, setTableKind] = useState<TableKind>('grouped');
+  const [tableSetup, setTableSetup] = useState<TableSetup>(defaultSetupForKind('grouped'));
   const [assistantPrompt, setAssistantPrompt] = useState('Turn this into the right table for a grouped bar graph with raw points.');
+  const [labNotes, setLabNotes] = useState('Aim: compare response across conditions.\n\nDesign notes:\n- Check whether replicates are independent biological replicates.\n- Record exclusions before analysis.\n- Export graph and JSON together for reproducibility.');
   const [settings, setSettings] = useState<GraphSettings>(defaultSettings);
   const clean = useMemo(() => parseSmartInput(rawData, settings.palette), [rawData, settings.palette]);
   const stats = useMemo(() => summaries(clean.groups), [clean.groups]);
@@ -836,8 +970,10 @@ export default function App() {
     download('biograph-studio-analysis.json', JSON.stringify({ settings, graphMode, analysisType, import: clean, summaries: stats, analysis }, null, 2), 'application/json');
   };
   const applyTableKind = (kind: TableKind) => {
-    const defaults = tableKindDefaults(kind);
+    const nextSetup = defaultSetupForKind(kind);
+    const defaults = tableKindDefaults(kind, nextSetup);
     setTableKind(kind);
+    setTableSetup(nextSetup);
     setRawData(defaults.data);
     setGraphMode(defaults.graphMode);
     setAnalysisType(defaults.analysisType);
@@ -845,6 +981,16 @@ export default function App() {
     setSetting('xLabel', defaults.xLabel);
     setSetting('yLabel', defaults.yLabel);
     setActiveSheet('data');
+  };
+  const updateTableSetup = <K extends keyof TableSetup>(key: K, value: TableSetup[K]) => setTableSetup((current) => ({ ...current, [key]: value }));
+  const regenerateTable = () => {
+    const defaults = tableKindDefaults(tableKind, tableSetup);
+    setRawData(defaults.data);
+    setGraphMode(defaults.graphMode);
+    setAnalysisType(defaults.analysisType);
+    setSetting('title', defaults.title);
+    setSetting('xLabel', defaults.xLabel);
+    setSetting('yLabel', defaults.yLabel);
   };
 
   return (
@@ -982,6 +1128,23 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                <div className="setup-grid">
+                  <StepperRow label="Groups" value={tableSetup.groups} min={1} max={12} onChange={(value) => updateTableSetup('groups', value)} />
+                  <StepperRow label="Replicates" value={tableSetup.replicates} min={1} max={24} onChange={(value) => updateTableSetup('replicates', value)} />
+                  <StepperRow label="Subcolumns" value={tableSetup.subcolumns} min={1} max={8} onChange={(value) => updateTableSetup('subcolumns', value)} />
+                  <StepperRow label="X values" value={tableSetup.xPoints} min={2} max={24} onChange={(value) => updateTableSetup('xPoints', value)} />
+                  <label className="toggle-row">
+                    <input type="checkbox" checked={tableSetup.paired} onChange={(event) => updateTableSetup('paired', event.target.checked)} />
+                    Matched or paired values
+                  </label>
+                  <label className="toggle-row">
+                    <input type="checkbox" checked={tableSetup.repeatedMeasures} onChange={(event) => updateTableSetup('repeatedMeasures', event.target.checked)} />
+                    Repeated measures over X
+                  </label>
+                  <button className="primary-action" onClick={regenerateTable}>
+                    Generate table
+                  </button>
+                </div>
               </div>
               <div className="assistant-panel">
                 <div>
@@ -1087,26 +1250,79 @@ export default function App() {
           )}
 
           {activeSheet === 'layout' && (
-            <div className="placeholder-sheet">
-              <h2>Layouts</h2>
-              <p>Next: multi-panel figure pages, imported blot/microscopy panels, shared axis sizing, journal presets, and PowerPoint/PDF export.</p>
+            <div className="layout-sheet">
+              <div className="sheet-heading">
+                <h2>Figure Layout</h2>
+                <span>Export-ready composition controls</span>
+              </div>
+              <div className="layout-grid">
+                {[
+                  ['Single figure', 'One graph with legend and axis labels.'],
+                  ['Two-panel figure', 'Graph plus analysis summary table.'],
+                  ['Four-panel figure', 'Designed for assay panels or figure supplements.'],
+                  ['Slide figure', 'Large typography and simple legend for talks.'],
+                ].map(([title, detail]) => (
+                  <button key={title} onClick={() => applyGraphPreset(title.includes('Slide') ? 'talk' : title.includes('Single') ? 'journal' : 'poster', setSetting)}>
+                    <strong>{title}</strong>
+                    <span>{detail}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="layout-preview">
+                <div>
+                  <strong>Panel A</strong>
+                  <span>{settings.title}</span>
+                </div>
+                <div>
+                  <strong>Analysis</strong>
+                  <span>{analysis?.label ?? 'No compatible analysis'} · {analysis ? pLabel(analysis.p) : clean.format}</span>
+                </div>
+                <div>
+                  <strong>Export package</strong>
+                  <span>SVG figure, cleaned CSV, JSON analysis record.</span>
+                </div>
+              </div>
             </div>
           )}
 
           {activeSheet === 'notes' && (
-            <div className="placeholder-sheet">
-              <h2>Notebook</h2>
-              <p>Next: experiment notes, assumption checks, method text, and a reproducible audit trail of every data transform and analysis choice.</p>
+            <div className="notes-sheet">
+              <div className="sheet-heading">
+                <h2>Notebook & Audit Trail</h2>
+                <span>Methods text starts here</span>
+              </div>
+              <textarea value={labNotes} onChange={(event) => setLabNotes(event.target.value)} aria-label="Lab notes" />
+              <div className="audit-grid">
+                {[
+                  ['Table', `${tableKind} · ${tableSetup.groups} groups · ${tableSetup.replicates} replicates`],
+                  ['Design', `${tableSetup.paired ? 'paired' : 'unpaired'} · ${tableSetup.repeatedMeasures ? 'repeated measures' : 'independent groups'}`],
+                  ['Import', clean.format],
+                  ['Graph', `${graphMode} · ${settings.palette} palette · ${settings.errorBars.toUpperCase()} error bars`],
+                  ['Analysis', analysis ? `${analysis.label}; ${pLabel(analysis.p)}` : 'No compatible analysis yet'],
+                  ['Data sets', clean.groups.map((group) => `${group.name} n=${group.values.length}`).join('; ')],
+                ].map(([title, detail]) => (
+                  <div key={title}>
+                    <strong>{title}</strong>
+                    <span>{detail}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
           {activeSheet === 'map' && (
             <div className="feature-map">
-              <h2>Prism-Class Feature Map</h2>
-              {['Column/grouped/XY/multiple-variable/survival/nested tables', 't tests, nonparametric tests, ANOVA, multiple comparisons', 'Linear, nonlinear, dose-response, binding, kinetics, enzyme models', 'Kaplan-Meier survival, logistic regression, PCA, transformations', 'Publication graphs, layouts, legends, axes, palettes, export presets', 'AI-assisted import, test selection, assumptions, and method reporting'].map((item) => (
-                <div key={item}>
+              <h2>Build Coverage</h2>
+              {[
+                ['Ready now', 'Column/grouped/XY/dose starters, smart paste, graph presets, exports, core tests.'],
+                ['Partial now', 'Survival and multiple-variable tables have starters and audit capture, but engine calculations need backend support.'],
+                ['Engine target', 'Two-way/repeated/mixed models, nonlinear regression, multiple comparisons, survival curves, PCA.'],
+                ['AI target', 'Natural-language table repair, test guidance, assumptions, methods text, and figure-polishing suggestions.'],
+                ['Graph target', 'Direct-click graph editing, multi-panel layouts, PNG/PDF export, journal size presets.'],
+              ].map(([title, detail]) => (
+                <div key={title}>
                   <Sparkles size={15} />
-                  <span>{item}</span>
+                  <span><strong>{title}</strong> {detail}</span>
                 </div>
               ))}
             </div>

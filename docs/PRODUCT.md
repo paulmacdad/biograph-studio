@@ -6,6 +6,7 @@ The product goal is a free scientific graphing and statistics workbook for biolo
 
 - A project/workbook with data tables, analyses, graphs, layouts, and notes.
 - A "new table and graph" starting point where users choose Column, Grouped, XY, Dose-response, Survival, or Multiple-variable data before doing anything else.
+- A setup step for each table where users specify how many groups, replicates, subcolumns, X values, paired values, and repeated-measures dimensions they have.
 - Obvious top-level actions: New Table & Graph, Analyze, Change Graph Type, Format Graph, Export.
 - Graph-first feedback: users should see a useful figure almost immediately after pasting data.
 - Guided stats: the app should recommend plausible analyses and explain why.
@@ -22,6 +23,7 @@ The product goal is a free scientific graphing and statistics workbook for biolo
 ## Near-Term UX Milestones
 
 - Table templates for column, grouped, XY, survival, nested, qPCR, ELISA, viability, and Western blot workflows.
+- Editable generated tables where changing the setup dimensions updates both table shape and linked graph defaults.
 - A graph wizard that asks: data type, biological question, graph family, analysis, styling preset, export target.
 - Direct manipulation of graph elements: click title, axes, legend, point set, bar, or error bar to edit it in the inspector.
 - Project save/load with raw data, transformed data, analyses, graphs, layouts, and notes.
