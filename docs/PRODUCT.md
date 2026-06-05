@@ -24,6 +24,7 @@ The product goal is a free scientific graphing and statistics workbook for biolo
 
 - Table templates for column, grouped, XY, survival, nested, qPCR, ELISA, viability, and Western blot workflows.
 - Editable generated tables where changing the setup dimensions updates both table shape and linked graph defaults.
+- Spreadsheet-like editing with add-row/add-column controls and immediate graph/statistics updates.
 - A graph wizard that asks: data type, biological question, graph family, analysis, styling preset, export target.
 - Direct manipulation of graph elements: click title, axes, legend, point set, bar, or error bar to edit it in the inspector.
 - Project save/load with raw data, transformed data, analyses, graphs, layouts, and notes.

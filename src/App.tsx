@@ -16,7 +16,7 @@ import {
   Table2,
 } from 'lucide-react';
 import type { PointerEvent } from 'react';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 
 type Sheet = 'data' | 'analysis' | 'graph' | 'layout' | 'notes' | 'map';
 type GraphMode = 'scatter' | 'bar' | 'box' | 'line' | 'dose';
@@ -357,6 +357,38 @@ function welch(groups: CleanGroup[]) {
   return { label: 'Welch unpaired t test', p, lines: [`Difference = ${fmt(ma - mb)}`, `t = ${fmt(t)}, df = ${fmt(df)}`, `95% CI = ${fmt(ma - mb - ci)} to ${fmt(ma - mb + ci)}`] };
 }
 
+function welchPValue(a: CleanGroup, b: CleanGroup) {
+  if (a.values.length < 2 || b.values.length < 2) return null;
+  const ma = mean(a.values);
+  const mb = mean(b.values);
+  const sda = sd(a.values);
+  const sdb = sd(b.values);
+  const na = a.values.length;
+  const nb = b.values.length;
+  const se2a = sda ** 2 / na;
+  const se2b = sdb ** 2 / nb;
+  const t = (ma - mb) / Math.sqrt(se2a + se2b);
+  const df = (se2a + se2b) ** 2 / (se2a ** 2 / (na - 1) + se2b ** 2 / (nb - 1));
+  const p = 2 * (1 - jStat.studentt.cdf(Math.abs(t), df));
+  return { p, difference: ma - mb };
+}
+
+function pairwiseComparisons(groups: CleanGroup[]) {
+  const raw = groups.flatMap((a, aIndex) =>
+    groups.slice(aIndex + 1).map((b) => {
+      const result = welchPValue(a, b);
+      return result ? { a: a.name, b: b.name, difference: result.difference, p: result.p, adjustedP: result.p } : null;
+    }),
+  ).filter(Boolean) as Array<{ a: string; b: string; difference: number; p: number; adjustedP: number }>;
+
+  const sorted = [...raw].sort((left, right) => left.p - right.p);
+  const m = sorted.length;
+  sorted.forEach((row, index) => {
+    row.adjustedP = Math.min(1, row.p * (m - index));
+  });
+  return raw.map((row) => sorted.find((item) => item.a === row.a && item.b === row.b) ?? row);
+}
+
 function pairedT(groups: CleanGroup[]) {
   if (groups.length !== 2) return null;
   const n = Math.min(groups[0].values.length, groups[1].values.length);
@@ -513,6 +545,38 @@ function buildCsv(groups: CleanGroup[]) {
 function escapeCsv(value: string | number) {
   const text = String(value);
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function rowsToCsv(rows: string[][]) {
+  return rows.map((row) => row.map(escapeCsv).join(',')).join('\n');
+}
+
+function normalizedRows(text: string, minRows = 2, minCols = 2) {
+  const rows = splitRows(text);
+  const height = Math.max(rows.length, minRows);
+  const width = Math.max(...rows.map((row) => row.length), minCols);
+  return Array.from({ length: height }, (_, rowIndex) =>
+    Array.from({ length: width }, (_, columnIndex) => rows[rowIndex]?.[columnIndex] ?? ''),
+  );
+}
+
+function updateCell(text: string, rowIndex: number, columnIndex: number, value: string) {
+  const rows = normalizedRows(text);
+  rows[rowIndex][columnIndex] = value;
+  return rowsToCsv(rows);
+}
+
+function appendRow(text: string) {
+  const rows = normalizedRows(text);
+  rows.push(Array.from({ length: rows[0].length }, () => ''));
+  return rowsToCsv(rows);
+}
+
+function appendColumn(text: string) {
+  const rows = normalizedRows(text);
+  const label = rows.length > 0 && rows[0][0] === 'Condition' ? `Rep ${rows[0].length}` : `Column ${rows[0].length + 1}`;
+  rows.forEach((row, index) => row.push(index === 0 ? label : ''));
+  return rowsToCsv(rows);
 }
 
 function wideToLong(text: string) {
@@ -945,6 +1009,33 @@ function StepperRow({ label, value, min, max, onChange }: { label: string; value
   );
 }
 
+function EditableDataGrid({ rawData, onChange }: { rawData: string; onChange: (value: string) => void }) {
+  const rows = normalizedRows(rawData, 4, 4);
+  const visibleRows = rows.slice(0, 16);
+  const visibleWidth = Math.min(Math.max(...visibleRows.map((row) => row.length), 4), 12);
+  return (
+    <div className="editable-table">
+      <div className="table-actions">
+        <button onClick={() => onChange(appendRow(rawData))}>Add row</button>
+        <button onClick={() => onChange(appendColumn(rawData))}>Add column</button>
+      </div>
+      <div className="editable-grid" style={{ gridTemplateColumns: `repeat(${visibleWidth}, minmax(96px, 1fr))` }}>
+        {visibleRows.map((row, rowIndex) =>
+          Array.from({ length: visibleWidth }, (_, columnIndex) => (
+            <input
+              key={`${rowIndex}-${columnIndex}`}
+              className={rowIndex === 0 ? 'header-cell' : ''}
+              value={row[columnIndex] ?? ''}
+              onChange={(event) => onChange(updateCell(rawData, rowIndex, columnIndex, event.target.value))}
+              aria-label={`Row ${rowIndex + 1} column ${columnIndex + 1}`}
+            />
+          )),
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [rawData, setRawData] = useState(groupedSample);
   const [activeSheet, setActiveSheet] = useState<Sheet>('graph');
@@ -958,6 +1049,7 @@ export default function App() {
   const clean = useMemo(() => parseSmartInput(rawData, settings.palette), [rawData, settings.palette]);
   const stats = useMemo(() => summaries(clean.groups), [clean.groups]);
   const analysis = useMemo(() => runAnalysis(analysisType, clean.groups), [analysisType, clean.groups]);
+  const pairwise = useMemo(() => pairwiseComparisons(clean.groups), [clean.groups]);
   const suggestions = useMemo(() => importSuggestions(clean), [clean]);
   const setSetting = <K extends keyof GraphSettings>(key: K, value: GraphSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
 
@@ -1181,16 +1273,12 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <textarea value={rawData} onChange={(event) => setRawData(event.target.value)} spellCheck={false} aria-label="Raw pasted table" />
-              <div className="table-preview">
-                {clean.rows.slice(0, 8).map((row, rowIndex) => (
-                  <div key={rowIndex} className={rowIndex === 0 ? 'header-row' : ''}>
-                    {row.slice(0, 8).map((cell, cellIndex) => (
-                      <span key={`${rowIndex}-${cellIndex}`}>{cell}</span>
-                    ))}
-                  </div>
-                ))}
+              <div className="sheet-heading compact-heading">
+                <h2>Data Table</h2>
+                <span>Edit cells directly or paste into raw CSV.</span>
               </div>
+              <EditableDataGrid rawData={rawData} onChange={setRawData} />
+              <textarea value={rawData} onChange={(event) => setRawData(event.target.value)} spellCheck={false} aria-label="Raw pasted table" />
             </div>
           )}
 
@@ -1222,6 +1310,28 @@ export default function App() {
                   <span>This analysis is not compatible with the current table.</span>
                 )}
               </div>
+              {pairwise.length > 0 && (
+                <div className="comparison-panel">
+                  <div className="sheet-heading compact-heading">
+                    <h2>Multiple Comparisons</h2>
+                    <span>Welch pairwise tests with Holm adjustment</span>
+                  </div>
+                  <div className="comparison-table">
+                    <strong>Comparison</strong>
+                    <strong>Difference</strong>
+                    <strong>P value</strong>
+                    <strong>Adjusted P</strong>
+                    {pairwise.map((row) => (
+                      <Fragment key={`${row.a}-${row.b}`}>
+                        <span key={`${row.a}-${row.b}-name`}>{row.a} vs {row.b}</span>
+                        <span key={`${row.a}-${row.b}-diff`}>{fmt(row.difference)}</span>
+                        <span key={`${row.a}-${row.b}-p`}>{pLabel(row.p)}</span>
+                        <span key={`${row.a}-${row.b}-adj`}>{pLabel(row.adjustedP)}</span>
+                      </Fragment>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="analysis-roadmap">
                 {[
                   ['Implemented in-browser', 'Descriptives, t tests, Mann-Whitney, one-way ANOVA, Kruskal-Wallis, linear regression, dose estimates.'],
