@@ -13,11 +13,14 @@ This is not a GraphPad Prism clone. It is a legally distinct open tool aimed at 
 - One-click reshaping actions for wide-to-long, transpose, control normalization, and log10 X conversion
 - Familiar scientific-workbook flow with New Table & Graph, Analyze, Change Graph Type, and Format Graph actions
 - Working layout, notebook, audit-trail, and build-coverage screens
+- Built-in tutorial sheet for grouped graphs, dose-response, Kaplan-Meier, data repair, publication styling, and AI guidance
 - Workbook-style navigator for data, analyses, graphs, layouts, notes, and feature planning
 - Dot, bar, box, line, and dose-response SVG plots
+- P-value comparison bars on grouped plots
+- Kaplan-Meier survival plots with number-at-risk table and log-rank result
 - Publication graph inspector with axis labels, font sizing, symbols, line width, bar width, grids, points, legends, error bars, multiple palettes, and journal/talk/poster/minimal presets
 - Per-group n, mean, SD, SEM, 95% CI, median, quartiles, min, and max
-- Welch unpaired t test, paired t test, Mann-Whitney test, one-way ANOVA, Kruskal-Wallis test, linear regression, rough dose-response estimates, and pairwise Welch comparisons with Holm adjustment
+- Welch unpaired t test, paired t test, Mann-Whitney test, one-way ANOVA, Kruskal-Wallis test, linear regression, rough dose-response estimates, Kaplan-Meier/log-rank, and pairwise Welch comparisons with Holm adjustment
 - Cleaned CSV, SVG figure, and JSON analysis export
 
 ## Direction
@@ -50,7 +53,7 @@ Then open the local URL printed by Vite.
 - Full nonlinear regression engine with IC50/EC50, binding, kinetics, enzyme models, constraints, confidence intervals, and residual diagnostics
 - Multiple-comparison corrections after ANOVA, including Tukey, Dunnett, Holm-Sidak, Bonferroni, FDR, and Games-Howell style workflows
 - Two-way, three-way, repeated-measures, mixed-effects, nested, and multiple-variable analyses
-- Kaplan-Meier survival analysis, log-rank/Gehan-Wilcoxon tests, logistic regression, PCA, transformations, outlier detection, and normality checks
+- Gehan-Wilcoxon tests, logistic regression, PCA, transformations, outlier detection, and normality checks
 - qPCR, ELISA, Western blot, and viability assay templates
 - Project files that save raw data, cleaned data, analysis choices, and graph styling together
 - PNG/PDF export and PowerPoint-friendly figure sizing

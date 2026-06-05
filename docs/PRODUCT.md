@@ -11,6 +11,7 @@ The product goal is a free scientific graphing and statistics workbook for biolo
 - Graph-first feedback: users should see a useful figure almost immediately after pasting data.
 - Guided stats: the app should recommend plausible analyses and explain why.
 - Publication-quality defaults with direct control over axes, symbols, bars, legends, labels, error bars, palettes, and export sizes.
+- Direct graph annotations including p-value brackets and survival number-at-risk tables.
 
 ## Where It Should Beat Existing Tools
 

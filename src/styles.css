@@ -568,6 +568,18 @@ select:focus {
   stroke-width: 1.6;
 }
 
+.pvalue-line {
+  stroke: #30343f;
+  stroke-linecap: round;
+  stroke-width: 1.4;
+}
+
+.pvalue-label,
+.risk-title {
+  fill: #30343f;
+  font-weight: 800;
+}
+
 .empty-state {
   align-items: center;
   background: #ffffff;
@@ -791,6 +803,7 @@ select:focus {
 
 .layout-sheet,
 .notes-sheet,
+.tutorial-sheet,
 .feature-map {
   background: #ffffff;
   border: 1px solid #cfd6d2;
@@ -853,6 +866,27 @@ select:focus {
   margin-top: 12px;
 }
 
+.tutorial-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tutorial-grid div {
+  background: #f8faf8;
+  border: 1px solid #d7dfda;
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+}
+
+.tutorial-grid span {
+  color: #60706a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .feature-map {
   display: grid;
   gap: 11px;
@@ -912,6 +946,7 @@ select:focus {
   .layout-preview,
   .setup-grid,
   .table-kind-grid,
+  .tutorial-grid,
   .workflow-strip,
   .navigator {
     grid-template-columns: 1fr;

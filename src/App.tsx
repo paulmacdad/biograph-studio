@@ -18,9 +18,9 @@ import {
 import type { PointerEvent } from 'react';
 import { Fragment, useMemo, useState } from 'react';
 
-type Sheet = 'data' | 'analysis' | 'graph' | 'layout' | 'notes' | 'map';
-type GraphMode = 'scatter' | 'bar' | 'box' | 'line' | 'dose';
-type AnalysisType = 'auto' | 'welch' | 'paired' | 'mannWhitney' | 'anova' | 'kruskal' | 'linear' | 'dose';
+type Sheet = 'data' | 'analysis' | 'graph' | 'layout' | 'notes' | 'tutorials' | 'map';
+type GraphMode = 'scatter' | 'bar' | 'box' | 'line' | 'dose' | 'survival';
+type AnalysisType = 'auto' | 'welch' | 'paired' | 'mannWhitney' | 'anova' | 'kruskal' | 'linear' | 'dose' | 'survival';
 type ErrorBars = 'sem' | 'sd' | 'ci95' | 'none';
 type PaletteId = 'editorial' | 'bright' | 'colourblind' | 'nature' | 'mono';
 
@@ -41,6 +41,12 @@ type CleanResult = {
     y?: string;
     group?: string;
   };
+};
+type SurvivalGroup = {
+  name: string;
+  color: string;
+  rows: Array<{ time: number; event: number }>;
+  curve: Point[];
 };
 type Summary = {
   name: string;
@@ -67,6 +73,7 @@ type GraphSettings = {
   showGrid: boolean;
   showPoints: boolean;
   showLegend: boolean;
+  showPValues: boolean;
   errorBars: ErrorBars;
 };
 type GraphPreset = 'journal' | 'talk' | 'poster' | 'minimal';
@@ -100,6 +107,7 @@ const defaultSettings: GraphSettings = {
   showGrid: true,
   showPoints: true,
   showLegend: true,
+  showPValues: true,
   errorBars: 'sem',
 };
 
@@ -152,6 +160,7 @@ const graphModes: Array<{ id: GraphMode; label: string; icon: typeof BarChart3 }
   { id: 'box', label: 'Box', icon: FileSpreadsheet },
   { id: 'line', label: 'Line', icon: LineChart },
   { id: 'dose', label: 'Dose', icon: FlaskConical },
+  { id: 'survival', label: 'Survival', icon: LineChart },
 ];
 
 const analyses: Array<{ id: AnalysisType; label: string; detail: string }> = [
@@ -163,6 +172,7 @@ const analyses: Array<{ id: AnalysisType; label: string; detail: string }> = [
   { id: 'kruskal', label: 'Kruskal-Wallis', detail: 'Nonparametric multi-group comparison.' },
   { id: 'linear', label: 'Linear regression', detail: 'For XY or long dose tables.' },
   { id: 'dose', label: 'Dose response', detail: 'Four-parameter logistic estimate.' },
+  { id: 'survival', label: 'Survival', detail: 'Kaplan-Meier curves and log-rank test.' },
 ];
 
 const graphPresets: Array<{ id: GraphPreset; label: string; detail: string }> = [
@@ -177,7 +187,7 @@ const tableKinds: Array<{ id: TableKind; label: string; detail: string; status: 
   { id: 'grouped', label: 'Grouped', detail: 'Rows are treatments, columns are replicates or subcolumns.', status: 'Ready' },
   { id: 'xy', label: 'XY', detail: 'X values with one or more Y series; lines and regression.', status: 'Ready' },
   { id: 'dose', label: 'Dose-response', detail: 'Concentration-response data with grouped compounds.', status: 'Ready' },
-  { id: 'survival', label: 'Survival', detail: 'Kaplan-Meier style time/event data; engine target.', status: 'Engine soon' },
+  { id: 'survival', label: 'Survival', detail: 'Kaplan-Meier time/event data with number-at-risk table.', status: 'Ready' },
   { id: 'multiple', label: 'Multiple variables', detail: 'Clinical/sample metadata with many measured variables.', status: 'Engine soon' },
 ];
 
@@ -387,6 +397,73 @@ function pairwiseComparisons(groups: CleanGroup[]) {
     row.adjustedP = Math.min(1, row.p * (m - index));
   });
   return raw.map((row) => sorted.find((item) => item.a === row.a && item.b === row.b) ?? row);
+}
+
+function survivalFromRows(rows: string[][], palette: PaletteId) {
+  const header = rows[0] ?? [];
+  const timeColumn = header.findIndex((cell) => /time|day|month|week/i.test(cell));
+  const eventColumn = header.findIndex((cell) => /event|status|death|failure|censor/i.test(cell));
+  const groupColumn = header.findIndex((cell) => /group|treatment|condition|arm/i.test(cell));
+  if (timeColumn < 0 || eventColumn < 0 || groupColumn < 0) return { groups: [] as SurvivalGroup[], p: NaN, lines: [] as string[] };
+
+  const grouped = new Map<string, Array<{ time: number; event: number }>>();
+  for (const row of rows.slice(1)) {
+    const time = toNumber(row[timeColumn] ?? '');
+    const event = toNumber(row[eventColumn] ?? '');
+    const group = row[groupColumn] || 'Untitled';
+    if (Number.isFinite(time) && Number.isFinite(event)) grouped.set(group, [...(grouped.get(group) ?? []), { time, event: event > 0 ? 1 : 0 }]);
+  }
+  const colors = palettes[palette];
+  const groups = [...grouped.entries()].map(([name, groupRows], index) => ({
+    name,
+    color: colors[index % colors.length],
+    rows: groupRows.sort((a, b) => a.time - b.time),
+    curve: kaplanMeier(groupRows),
+  }));
+  const logRank = logRankTest(groups);
+  return {
+    groups,
+    p: logRank?.p ?? NaN,
+    lines: logRank ? [`Log-rank chi-square = ${fmt(logRank.chiSquare)}`, `df = ${logRank.df}`] : ['Add at least two survival groups for log-rank testing.'],
+  };
+}
+
+function kaplanMeier(rows: Array<{ time: number; event: number }>) {
+  const sortedTimes = [...new Set(rows.map((row) => row.time))].sort((a, b) => a - b);
+  let survival = 1;
+  const curve: Point[] = [{ x: 0, y: 1 }];
+  for (const time of sortedTimes) {
+    const atRisk = rows.filter((row) => row.time >= time).length;
+    const events = rows.filter((row) => row.time === time && row.event === 1).length;
+    if (atRisk > 0 && events > 0) survival *= 1 - events / atRisk;
+    curve.push({ x: time, y: survival });
+  }
+  return curve;
+}
+
+function logRankTest(groups: SurvivalGroup[]) {
+  if (groups.length < 2) return null;
+  const allRows = groups.flatMap((group) => group.rows.map((row) => ({ ...row, group: group.name })));
+  const eventTimes = [...new Set(allRows.filter((row) => row.event === 1).map((row) => row.time))].sort((a, b) => a - b);
+  const observed = new Map(groups.map((group) => [group.name, 0]));
+  const expected = new Map(groups.map((group) => [group.name, 0]));
+  for (const time of eventTimes) {
+    const totalAtRisk = allRows.filter((row) => row.time >= time).length;
+    const totalEvents = allRows.filter((row) => row.time === time && row.event === 1).length;
+    for (const group of groups) {
+      const atRisk = group.rows.filter((row) => row.time >= time).length;
+      const events = group.rows.filter((row) => row.time === time && row.event === 1).length;
+      observed.set(group.name, (observed.get(group.name) ?? 0) + events);
+      expected.set(group.name, (expected.get(group.name) ?? 0) + (totalAtRisk > 0 ? (atRisk / totalAtRisk) * totalEvents : 0));
+    }
+  }
+  const chiSquare = groups.reduce((sum, group) => {
+    const o = observed.get(group.name) ?? 0;
+    const e = expected.get(group.name) ?? 0;
+    return e > 0 ? sum + (o - e) ** 2 / e : sum;
+  }, 0);
+  const df = groups.length - 1;
+  return { chiSquare, df, p: 1 - jStat.chisquare.cdf(chiSquare, df) };
 }
 
 function pairedT(groups: CleanGroup[]) {
@@ -794,8 +871,8 @@ function tableKindDefaults(kind: TableKind, setup = defaultSetupForKind(kind)) {
   if (kind === 'survival') {
     return {
       data: generateTable(kind, setup),
-      graphMode: 'line' as GraphMode,
-      analysisType: 'auto' as AnalysisType,
+      graphMode: 'survival' as GraphMode,
+      analysisType: 'survival' as AnalysisType,
       title: 'Survival by group',
       xLabel: 'Time',
       yLabel: 'Survival probability',
@@ -813,6 +890,11 @@ function tableKindDefaults(kind: TableKind, setup = defaultSetupForKind(kind)) {
 
 function Plot({ groups, mode, settings }: { groups: CleanGroup[]; mode: GraphMode; settings: GraphSettings }) {
   const stats = summaries(groups);
+  const comparisonBars = settings.showPValues
+    ? pairwiseComparisons(groups)
+        .sort((a, b) => a.adjustedP - b.adjustedP)
+        .slice(0, 3)
+    : [];
   const width = 900;
   const height = 560;
   const margin = { top: 68, right: settings.showLegend ? 150 : 34, bottom: 104, left: 82 };
@@ -945,6 +1027,25 @@ function Plot({ groups, mode, settings }: { groups: CleanGroup[]; mode: GraphMod
           </g>
         );
       })}
+      {!xyMode &&
+        comparisonBars.map((comparison, index) => {
+          const left = groups.findIndex((group) => group.name === comparison.a);
+          const right = groups.findIndex((group) => group.name === comparison.b);
+          if (left < 0 || right < 0) return null;
+          const x1 = xCat(left);
+          const x2 = xCat(right);
+          const yBar = margin.top + 18 + index * 24;
+          return (
+            <g key={`${comparison.a}-${comparison.b}-bar`}>
+              <line x1={x1} x2={x1} y1={yBar + 8} y2={yBar + 16} className="pvalue-line" />
+              <line x1={x1} x2={x2} y1={yBar + 8} y2={yBar + 8} className="pvalue-line" />
+              <line x1={x2} x2={x2} y1={yBar + 8} y2={yBar + 16} className="pvalue-line" />
+              <text x={(x1 + x2) / 2} y={yBar} textAnchor="middle" className="pvalue-label" style={{ fontSize: settings.fontSize - 1 }}>
+                {pLabel(comparison.adjustedP)}
+              </text>
+            </g>
+          );
+        })}
       <text x={margin.left + plotW / 2} y={height - 22} textAnchor="middle" className="axis-title" style={{ fontSize: settings.fontSize + 1 }}>
         {settings.xLabel}
       </text>
@@ -953,6 +1054,93 @@ function Plot({ groups, mode, settings }: { groups: CleanGroup[]; mode: GraphMod
       </text>
       {settings.showLegend &&
         groups.map((group, index) => (
+          <g key={`legend-${group.name}`} transform={`translate(${width - margin.right + 28} ${margin.top + index * 26})`}>
+            <circle cx="0" cy="0" r="6" fill={group.color} />
+            <text x="14" y="5" className="axis-label" style={{ fontSize: settings.fontSize }}>
+              {group.name}
+            </text>
+          </g>
+        ))}
+    </svg>
+  );
+}
+
+function SurvivalPlot({ survival, settings }: { survival: ReturnType<typeof survivalFromRows>; settings: GraphSettings }) {
+  const width = 900;
+  const height = 620;
+  const margin = { top: 68, right: settings.showLegend ? 150 : 36, bottom: 168, left: 82 };
+  const allTimes = survival.groups.flatMap((group) => group.rows.map((row) => row.time));
+  const maxTime = Math.max(...allTimes, 1);
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const x = (value: number) => margin.left + (value / maxTime) * plotW;
+  const y = (value: number) => margin.top + plotH - value * plotH;
+  const ticks = Array.from({ length: 5 }, (_, index) => (maxTime * index) / 4);
+  const riskTimes = Array.from({ length: 5 }, (_, index) => Math.round((maxTime * index) / 4));
+
+  return (
+    <svg id="export-plot" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={settings.title} className="plot survival-plot">
+      <rect width={width} height={height} fill="#ffffff" />
+      <text x={margin.left} y={34} className="plot-title" style={{ fontSize: settings.fontSize + 8 }}>
+        {settings.title}
+      </text>
+      {ticks.map((tick) => (
+        <g key={tick}>
+          {settings.showGrid && <line x1={x(tick)} x2={x(tick)} y1={margin.top} y2={height - margin.bottom} className="grid-line" />}
+          <text x={x(tick)} y={height - margin.bottom + 28} textAnchor="middle" className="axis-label" style={{ fontSize: settings.fontSize }}>
+            {fmt(tick)}
+          </text>
+        </g>
+      ))}
+      {[0, 0.25, 0.5, 0.75, 1].map((tick) => (
+        <g key={tick}>
+          {settings.showGrid && <line x1={margin.left} x2={width - margin.right} y1={y(tick)} y2={y(tick)} className="grid-line" />}
+          <text x={margin.left - 12} y={y(tick) + 4} textAnchor="end" className="axis-label" style={{ fontSize: settings.fontSize }}>
+            {fmt(tick)}
+          </text>
+        </g>
+      ))}
+      <line x1={margin.left} x2={margin.left} y1={margin.top} y2={height - margin.bottom} className="axis-line" />
+      <line x1={margin.left} x2={width - margin.right} y1={height - margin.bottom} y2={height - margin.bottom} className="axis-line" />
+      {survival.groups.map((group) => (
+        <polyline
+          key={group.name}
+          points={group.curve.map((point) => `${x(point.x)},${y(point.y)}`).join(' ')}
+          fill="none"
+          stroke={group.color}
+          strokeWidth={settings.lineWidth}
+          strokeLinecap="square"
+          strokeLinejoin="miter"
+        />
+      ))}
+      <text x={margin.left + plotW / 2} y={height - 76} textAnchor="middle" className="axis-title" style={{ fontSize: settings.fontSize + 1 }}>
+        {settings.xLabel}
+      </text>
+      <text transform={`translate(24 ${margin.top + plotH / 2}) rotate(-90)`} textAnchor="middle" className="axis-title" style={{ fontSize: settings.fontSize + 1 }}>
+        {settings.yLabel}
+      </text>
+      <text x={margin.left} y={height - 122} className="risk-title" style={{ fontSize: settings.fontSize }}>
+        Number at risk
+      </text>
+      {riskTimes.map((time) => (
+        <text key={`risk-time-${time}`} x={x(time)} y={height - 104} textAnchor="middle" className="axis-label" style={{ fontSize: settings.fontSize - 1 }}>
+          {time}
+        </text>
+      ))}
+      {survival.groups.map((group, groupIndex) => (
+        <g key={`risk-${group.name}`}>
+          <text x={margin.left - 10} y={height - 80 + groupIndex * 22} textAnchor="end" className="axis-label" fill={group.color} style={{ fontSize: settings.fontSize - 1 }}>
+            {group.name}
+          </text>
+          {riskTimes.map((time) => (
+            <text key={`${group.name}-${time}`} x={x(time)} y={height - 80 + groupIndex * 22} textAnchor="middle" className="axis-label" style={{ fontSize: settings.fontSize - 1 }}>
+              {group.rows.filter((row) => row.time >= time).length}
+            </text>
+          ))}
+        </g>
+      ))}
+      {settings.showLegend &&
+        survival.groups.map((group, index) => (
           <g key={`legend-${group.name}`} transform={`translate(${width - margin.right + 28} ${margin.top + index * 26})`}>
             <circle cx="0" cy="0" r="6" fill={group.color} />
             <text x="14" y="5" className="axis-label" style={{ fontSize: settings.fontSize }}>
@@ -1047,8 +1235,13 @@ export default function App() {
   const [labNotes, setLabNotes] = useState('Aim: compare response across conditions.\n\nDesign notes:\n- Check whether replicates are independent biological replicates.\n- Record exclusions before analysis.\n- Export graph and JSON together for reproducibility.');
   const [settings, setSettings] = useState<GraphSettings>(defaultSettings);
   const clean = useMemo(() => parseSmartInput(rawData, settings.palette), [rawData, settings.palette]);
+  const survival = useMemo(() => survivalFromRows(clean.rows, settings.palette), [clean.rows, settings.palette]);
   const stats = useMemo(() => summaries(clean.groups), [clean.groups]);
   const analysis = useMemo(() => runAnalysis(analysisType, clean.groups), [analysisType, clean.groups]);
+  const displayedAnalysis =
+    analysisType === 'survival'
+      ? { label: 'Kaplan-Meier survival analysis', p: survival.p, lines: survival.lines }
+      : analysis;
   const pairwise = useMemo(() => pairwiseComparisons(clean.groups), [clean.groups]);
   const suggestions = useMemo(() => importSuggestions(clean), [clean]);
   const setSetting = <K extends keyof GraphSettings>(key: K, value: GraphSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
@@ -1152,6 +1345,7 @@ export default function App() {
             ['graph', BarChart3, 'Graphs'],
             ['layout', FileText, 'Layouts'],
             ['notes', FileText, 'Notes'],
+            ['tutorials', Sparkles, 'Tutorials'],
             ['map', Sparkles, 'Feature map'],
           ].map(([id, Icon, label]) => (
             <button key={id as string} className={activeSheet === id ? 'active' : ''} onClick={() => setActiveSheet(id as Sheet)}>
@@ -1169,8 +1363,8 @@ export default function App() {
           <div className="workflow-strip" aria-label="Workflow">
             {[
               ['1', 'Paste data', clean.rows.length ? 'done' : 'todo'],
-              ['2', 'Choose analysis', analysis ? 'done' : 'todo'],
-              ['3', 'Style graph', clean.groups.length ? 'done' : 'todo'],
+              ['2', 'Choose analysis', displayedAnalysis ? 'done' : 'todo'],
+              ['3', 'Style graph', clean.groups.length || survival.groups.length ? 'done' : 'todo'],
               ['4', 'Export figure', 'ready'],
             ].map(([step, label, state]) => (
               <div key={step} className={state}>
@@ -1286,7 +1480,7 @@ export default function App() {
             <div className="analysis-sheet">
               <div className="sheet-heading">
                 <h2>Analyze Data</h2>
-                <span>{analysis?.label ?? 'No compatible test yet'}</span>
+                <span>{displayedAnalysis?.label ?? 'No compatible test yet'}</span>
               </div>
               <div className="analysis-grid">
                 {analyses.map((item) => (
@@ -1298,11 +1492,11 @@ export default function App() {
               </div>
               <div className="result-panel">
                 <span className="eyebrow">Result</span>
-                {analysis ? (
+                {displayedAnalysis ? (
                   <>
-                    <strong>{analysis.label}</strong>
-                    <b>{pLabel(analysis.p)}</b>
-                    {analysis.lines.map((line) => (
+                    <strong>{displayedAnalysis.label}</strong>
+                    <b>{pLabel(displayedAnalysis.p)}</b>
+                    {displayedAnalysis.lines.map((line) => (
                       <span key={line}>{line}</span>
                     ))}
                   </>
@@ -1310,7 +1504,7 @@ export default function App() {
                   <span>This analysis is not compatible with the current table.</span>
                 )}
               </div>
-              {pairwise.length > 0 && (
+              {analysisType !== 'survival' && pairwise.length > 0 && (
                 <div className="comparison-panel">
                   <div className="sheet-heading compact-heading">
                     <h2>Multiple Comparisons</h2>
@@ -1354,7 +1548,13 @@ export default function App() {
                   <h2>Change Graph Type</h2>
                   <span>Linked to the selected data table</span>
                 </div>
-                {clean.groups.length > 0 ? <Plot groups={clean.groups} mode={graphMode} settings={settings} /> : <div className="empty-state">No plottable numeric groups detected.</div>}
+                {graphMode === 'survival' && survival.groups.length > 0 ? (
+                  <SurvivalPlot survival={survival} settings={settings} />
+                ) : clean.groups.length > 0 ? (
+                  <Plot groups={clean.groups} mode={graphMode} settings={settings} />
+                ) : (
+                  <div className="empty-state">No plottable numeric groups detected.</div>
+                )}
               </div>
             </div>
           )}
@@ -1385,7 +1585,7 @@ export default function App() {
                 </div>
                 <div>
                   <strong>Analysis</strong>
-                  <span>{analysis?.label ?? 'No compatible analysis'} · {analysis ? pLabel(analysis.p) : clean.format}</span>
+                  <span>{displayedAnalysis?.label ?? 'No compatible analysis'} - {displayedAnalysis ? pLabel(displayedAnalysis.p) : clean.format}</span>
                 </div>
                 <div>
                   <strong>Export package</strong>
@@ -1408,8 +1608,32 @@ export default function App() {
                   ['Design', `${tableSetup.paired ? 'paired' : 'unpaired'} · ${tableSetup.repeatedMeasures ? 'repeated measures' : 'independent groups'}`],
                   ['Import', clean.format],
                   ['Graph', `${graphMode} · ${settings.palette} palette · ${settings.errorBars.toUpperCase()} error bars`],
-                  ['Analysis', analysis ? `${analysis.label}; ${pLabel(analysis.p)}` : 'No compatible analysis yet'],
+                  ['Analysis', displayedAnalysis ? `${displayedAnalysis.label}; ${pLabel(displayedAnalysis.p)}` : 'No compatible analysis yet'],
                   ['Data sets', clean.groups.map((group) => `${group.name} n=${group.values.length}`).join('; ')],
+                ].map(([title, detail]) => (
+                  <div key={title}>
+                    <strong>{title}</strong>
+                    <span>{detail}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeSheet === 'tutorials' && (
+            <div className="tutorial-sheet">
+              <div className="sheet-heading">
+                <h2>Tutorials & AI Guidance</h2>
+                <span>Built-in help for common biology figures</span>
+              </div>
+              <div className="tutorial-grid">
+                {[
+                  ['Grouped bar with raw points', 'Choose Grouped, set groups/replicates, generate table, pick Bar, turn on P value bars.'],
+                  ['Dose-response curve', 'Choose Dose-response, set X values, generate table, use Dose graph and dose-response analysis.'],
+                  ['Kaplan-Meier survival', 'Choose Survival, enter Time/Event/Group, use Survival graph, read the number-at-risk table below the curve.'],
+                  ['Fix pasted data', 'Paste into raw CSV, then use Wide to long, Transpose, Normalize, or Log10 X before analysis.'],
+                  ['Make it publication-ready', 'Use Journal preset, show raw points, set error bars, export SVG and JSON together.'],
+                  ['AI assistant contract', 'Future server-side AI should reshape data, explain assumptions, suggest tests, and produce methods text.'],
                 ].map(([title, detail]) => (
                   <div key={title}>
                     <strong>{title}</strong>
@@ -1424,8 +1648,8 @@ export default function App() {
             <div className="feature-map">
               <h2>Build Coverage</h2>
               {[
-                ['Ready now', 'Column/grouped/XY/dose starters, smart paste, graph presets, exports, core tests.'],
-                ['Partial now', 'Survival and multiple-variable tables have starters and audit capture, but engine calculations need backend support.'],
+                ['Ready now', 'Column/grouped/XY/dose/survival starters, KM curves, risk tables, smart paste, graph presets, exports, core tests.'],
+                ['Partial now', 'Multiple-variable tables have starters and audit capture, but engine calculations need backend support.'],
                 ['Engine target', 'Two-way/repeated/mixed models, nonlinear regression, multiple comparisons, survival curves, PCA.'],
                 ['AI target', 'Natural-language table repair, test guidance, assumptions, methods text, and figure-polishing suggestions.'],
                 ['Graph target', 'Direct-click graph editing, multi-panel layouts, PNG/PDF export, journal size presets.'],
@@ -1495,6 +1719,10 @@ export default function App() {
             <input type="checkbox" checked={settings.showLegend} onChange={(event) => setSetting('showLegend', event.target.checked)} />
             Legend
           </label>
+          <label className="toggle-row">
+            <input type="checkbox" checked={settings.showPValues} onChange={(event) => setSetting('showPValues', event.target.checked)} />
+            P value bars
+          </label>
           <div className="palette-strip" aria-label="Selected colour palette">
             <Palette size={16} />
             {palettes[settings.palette].slice(0, 8).map((color) => (
@@ -1512,8 +1740,8 @@ export default function App() {
           </div>
           <div className="result-panel compact">
             <span className="eyebrow">Suggested analysis</span>
-            <strong>{analysis?.label ?? 'No result yet'}</strong>
-            <span>{analysis ? pLabel(analysis.p) : clean.format}</span>
+            <strong>{displayedAnalysis?.label ?? 'No result yet'}</strong>
+            <span>{displayedAnalysis ? pLabel(displayedAnalysis.p) : clean.format}</span>
           </div>
           <div className="engine-panel">
             <span className="eyebrow">Stats engine</span>
