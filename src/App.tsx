@@ -23,6 +23,7 @@ type GraphMode = 'scatter' | 'bar' | 'box' | 'line' | 'dose' | 'survival';
 type AnalysisType = 'auto' | 'welch' | 'paired' | 'mannWhitney' | 'anova' | 'kruskal' | 'linear' | 'dose' | 'survival';
 type ErrorBars = 'sem' | 'sd' | 'ci95' | 'none';
 type PaletteId = 'editorial' | 'bright' | 'colourblind' | 'nature' | 'mono';
+type AxisScale = 'linear' | 'log10';
 
 type Point = { x: number; y: number };
 type CleanGroup = {
@@ -74,6 +75,8 @@ type GraphSettings = {
   showPoints: boolean;
   showLegend: boolean;
   showPValues: boolean;
+  showFitCurve: boolean;
+  xScale: AxisScale;
   errorBars: ErrorBars;
 };
 type GraphPreset = 'journal' | 'talk' | 'poster' | 'minimal';
@@ -108,6 +111,8 @@ const defaultSettings: GraphSettings = {
   showPoints: true,
   showLegend: true,
   showPValues: true,
+  showFitCurve: true,
+  xScale: 'linear',
   errorBars: 'sem',
 };
 
@@ -548,25 +553,37 @@ function linearRegression(groups: CleanGroup[]) {
   return { label: 'Linear regression', p, slope, intercept, lines: [`Y = ${fmt(slope)}X + ${fmt(intercept)}`, `R squared = ${fmt(r2)}`] };
 }
 
+function doseFit(group: CleanGroup) {
+  if (group.points.length < 4) return null;
+  const sorted = [...group.points].sort((a, b) => a.x - b.x);
+  const bottom = Math.min(...sorted.map((point) => point.y));
+  const top = Math.max(...sorted.map((point) => point.y));
+  const halfway = bottom + (top - bottom) / 2;
+  let ec50 = sorted[Math.floor(sorted.length / 2)].x;
+  for (let i = 1; i < sorted.length; i += 1) {
+    const prev = sorted[i - 1];
+    const next = sorted[i];
+    if ((prev.y <= halfway && next.y >= halfway) || (prev.y >= halfway && next.y <= halfway)) {
+      const fraction = (halfway - prev.y) / (next.y - prev.y);
+      ec50 = prev.x + fraction * (next.x - prev.x);
+      break;
+    }
+  }
+  return { bottom, top, ec50, hillSlope: 1.15 };
+}
+
+function fourParameterLogistic(x: number, fit: { bottom: number; top: number; ec50: number; hillSlope: number }) {
+  if (x <= 0 || fit.ec50 <= 0) return fit.bottom;
+  return fit.bottom + (fit.top - fit.bottom) / (1 + (fit.ec50 / x) ** fit.hillSlope);
+}
+
 function doseResponse(groups: CleanGroup[]) {
   const fits = groups
     .filter((group) => group.points.length >= 4)
     .map((group) => {
-      const sorted = [...group.points].sort((a, b) => a.x - b.x);
-      const bottom = Math.min(...sorted.map((point) => point.y));
-      const top = Math.max(...sorted.map((point) => point.y));
-      const halfway = bottom + (top - bottom) / 2;
-      let ec50 = sorted[Math.floor(sorted.length / 2)].x;
-      for (let i = 1; i < sorted.length; i += 1) {
-        const prev = sorted[i - 1];
-        const next = sorted[i];
-        if ((prev.y <= halfway && next.y >= halfway) || (prev.y >= halfway && next.y <= halfway)) {
-          const fraction = (halfway - prev.y) / (next.y - prev.y);
-          ec50 = prev.x + fraction * (next.x - prev.x);
-          break;
-        }
-      }
-      return `${group.name}: bottom ${fmt(bottom)}, top ${fmt(top)}, EC50 about ${fmt(ec50)}`;
+      const fit = doseFit(group);
+      if (!fit) return `${group.name}: fit unavailable`;
+      return `${group.name}: bottom ${fmt(fit.bottom)}, top ${fmt(fit.top)}, EC50 about ${fmt(fit.ec50)}, Hill slope ${fmt(fit.hillSlope)}`;
     });
   if (!fits.length) return null;
   return { label: 'Dose-response estimate', p: NaN, lines: fits };
@@ -901,20 +918,29 @@ function Plot({ groups, mode, settings }: { groups: CleanGroup[]; mode: GraphMod
   const xyMode = mode === 'dose' || (mode === 'line' && groups.some((group) => group.points.length > 2));
   const yValues = groups.flatMap((group) => group.values);
   const xValues = xyMode ? groups.flatMap((group) => group.points.map((point) => point.x)) : groups.map((_, index) => index + 1);
+  const positiveXValues = xValues.filter((value) => value > 0);
+  const useLogX = mode === 'dose' && settings.xScale === 'log10' && positiveXValues.length > 0;
+  const minPositiveX = positiveXValues.length ? Math.min(...positiveXValues) : 1;
+  const xTransform = (value: number) => (useLogX ? Math.log10(Math.max(value, minPositiveX)) : value);
   const minY = Math.min(0, ...yValues);
   const maxY = Math.max(...yValues, 1);
-  const minX = Math.min(...xValues, 0);
-  const maxX = Math.max(...xValues, 1);
+  const transformedX = xValues.map(xTransform);
+  const minX = useLogX ? Math.min(...transformedX) : Math.min(...transformedX, 0);
+  const maxX = useLogX ? Math.max(...transformedX) : Math.max(...transformedX, 1);
   const ySpan = maxY - minY || 1;
   const xSpan = maxX - minX || 1;
   const plotW = width - margin.left - margin.right;
   const plotH = height - margin.top - margin.bottom;
   const y = (value: number) => margin.top + plotH - ((value - minY) / ySpan) * plotH;
   const xCat = (index: number) => margin.left + (plotW / Math.max(groups.length, 1)) * (index + 0.5);
-  const xVal = (value: number) => margin.left + ((value - minX) / xSpan) * plotW;
+  const xVal = (value: number) => margin.left + ((xTransform(value) - minX) / xSpan) * plotW;
   const band = plotW / Math.max(groups.length, 1);
   const yTicks = Array.from({ length: 5 }, (_, index) => minY + (ySpan * index) / 4);
-  const xTicks = xyMode ? Array.from({ length: 5 }, (_, index) => minX + (xSpan * index) / 4) : [];
+  const xTicks = xyMode
+    ? useLogX
+      ? Array.from({ length: 5 }, (_, index) => 10 ** (minX + (xSpan * index) / 4))
+      : Array.from({ length: 5 }, (_, index) => minX + (xSpan * index) / 4)
+    : [];
 
   return (
     <svg id="export-plot" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={settings.title} className="plot">
@@ -956,10 +982,30 @@ function Plot({ groups, mode, settings }: { groups: CleanGroup[]; mode: GraphMod
         const jitterStep = Math.min(16, band / Math.max(group.values.length + 1, 4));
         const error = errorValue(summary, settings.errorBars);
         const points = group.points.length ? group.points : group.values.map((value, index) => ({ x: index + 1, y: value }));
+        const fit = mode === 'dose' ? doseFit(group) : null;
+        const fitPoints = useLogX ? points.filter((point) => point.x > 0) : points;
         const linePoints = points.map((point) => `${xyMode ? xVal(point.x) : xCat(groupIndex)},${y(point.y)}`).join(' ');
         return (
           <g key={group.name}>
-            {((mode === 'line' && xyMode) || mode === 'dose') && (
+            {mode === 'dose' && settings.showFitCurve && fit && fitPoints.length >= 2 && (
+              <polyline
+                points={Array.from({ length: 80 }, (_, fitIndex) => {
+                  const minRaw = Math.min(...fitPoints.map((point) => point.x));
+                  const maxRaw = Math.max(...fitPoints.map((point) => point.x));
+                  const xRaw = useLogX
+                    ? 10 ** (Math.log10(minRaw) + ((Math.log10(maxRaw) - Math.log10(minRaw)) * fitIndex) / 79)
+                    : minRaw + ((maxRaw - minRaw) * fitIndex) / 79;
+                  return `${xVal(xRaw)},${y(fourParameterLogistic(xRaw, fit))}`;
+                }).join(' ')}
+                fill="none"
+                stroke={group.color}
+                strokeWidth={settings.lineWidth + 0.8}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity="0.86"
+              />
+            )}
+            {((mode === 'line' && xyMode) || (mode === 'dose' && !settings.showFitCurve)) && (
               <polyline points={linePoints} fill="none" stroke={group.color} strokeWidth={settings.lineWidth} strokeLinecap="round" strokeLinejoin="round" />
             )}
             {mode === 'bar' && (
@@ -1265,6 +1311,8 @@ export default function App() {
     setSetting('title', defaults.title);
     setSetting('xLabel', defaults.xLabel);
     setSetting('yLabel', defaults.yLabel);
+    setSetting('xScale', kind === 'dose' ? 'log10' : 'linear');
+    setSetting('showFitCurve', kind === 'dose');
     setActiveSheet('data');
   };
   const updateTableSetup = <K extends keyof TableSetup>(key: K, value: TableSetup[K]) => setTableSetup((current) => ({ ...current, [key]: value }));
@@ -1276,6 +1324,8 @@ export default function App() {
     setSetting('title', defaults.title);
     setSetting('xLabel', defaults.xLabel);
     setSetting('yLabel', defaults.yLabel);
+    setSetting('xScale', tableKind === 'dose' ? 'log10' : 'linear');
+    setSetting('showFitCurve', tableKind === 'dose');
   };
 
   return (
@@ -1297,6 +1347,8 @@ export default function App() {
               setAnalysisType('dose');
               setSetting('title', 'Dose response by compound');
               setSetting('xLabel', 'Concentration');
+              setSetting('xScale', 'log10');
+              setSetting('showFitCurve', true);
             }}
             title="Load dose-response sample"
           >
@@ -1378,7 +1430,18 @@ export default function App() {
             {graphModes.map((mode) => {
               const Icon = mode.icon;
               return (
-                <button key={mode.id} className={graphMode === mode.id ? 'active' : ''} onClick={() => setGraphMode(mode.id)} title={`${mode.label} plot`}>
+                <button
+                  key={mode.id}
+                  className={graphMode === mode.id ? 'active' : ''}
+                  onClick={() => {
+                    setGraphMode(mode.id);
+                    if (mode.id === 'dose') {
+                      setSetting('xScale', 'log10');
+                      setSetting('showFitCurve', true);
+                    }
+                  }}
+                  title={`${mode.label} plot`}
+                >
                   <Icon size={17} />
                   {mode.label}
                 </button>
@@ -1703,6 +1766,15 @@ export default function App() {
               { value: 'none', label: 'None' },
             ]}
           />
+          <SelectRow
+            label="X scale"
+            value={settings.xScale}
+            onChange={(value) => setSetting('xScale', value)}
+            options={[
+              { value: 'linear', label: 'Linear' },
+              { value: 'log10', label: 'Log10' },
+            ]}
+          />
           <RangeRow label="Font" value={settings.fontSize} min={10} max={20} step={1} onChange={(value) => setSetting('fontSize', value)} />
           <RangeRow label="Symbols" value={settings.symbolSize} min={3} max={12} step={1} onChange={(value) => setSetting('symbolSize', value)} />
           <RangeRow label="Lines" value={settings.lineWidth} min={1} max={5} step={0.2} onChange={(value) => setSetting('lineWidth', value)} />
@@ -1718,6 +1790,10 @@ export default function App() {
           <label className="toggle-row">
             <input type="checkbox" checked={settings.showLegend} onChange={(event) => setSetting('showLegend', event.target.checked)} />
             Legend
+          </label>
+          <label className="toggle-row">
+            <input type="checkbox" checked={settings.showFitCurve} onChange={(event) => setSetting('showFitCurve', event.target.checked)} />
+            Fit curve
           </label>
           <label className="toggle-row">
             <input type="checkbox" checked={settings.showPValues} onChange={(event) => setSetting('showPValues', event.target.checked)} />

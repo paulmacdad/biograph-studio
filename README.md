@@ -15,12 +15,12 @@ This is not a GraphPad Prism clone. It is a legally distinct open tool aimed at 
 - Working layout, notebook, audit-trail, and build-coverage screens
 - Built-in tutorial sheet for grouped graphs, dose-response, Kaplan-Meier, data repair, publication styling, and AI guidance
 - Workbook-style navigator for data, analyses, graphs, layouts, notes, and feature planning
-- Dot, bar, box, line, and dose-response SVG plots
+- Dot, bar, box, line, and dose-response SVG plots, including log10 X scaling and smooth fitted curves
 - P-value comparison bars on grouped plots
 - Kaplan-Meier survival plots with number-at-risk table and log-rank result
-- Publication graph inspector with axis labels, font sizing, symbols, line width, bar width, grids, points, legends, error bars, multiple palettes, and journal/talk/poster/minimal presets
+- Publication graph inspector with axis labels, X scale, fit curves, font sizing, symbols, line width, bar width, grids, points, legends, error bars, multiple palettes, and journal/talk/poster/minimal presets
 - Per-group n, mean, SD, SEM, 95% CI, median, quartiles, min, and max
-- Welch unpaired t test, paired t test, Mann-Whitney test, one-way ANOVA, Kruskal-Wallis test, linear regression, rough dose-response estimates, Kaplan-Meier/log-rank, and pairwise Welch comparisons with Holm adjustment
+- Welch unpaired t test, paired t test, Mann-Whitney test, one-way ANOVA, Kruskal-Wallis test, linear regression, dose-response EC50-style estimates with Hill-slope display, Kaplan-Meier/log-rank, and pairwise Welch comparisons with Holm adjustment
 - Cleaned CSV, SVG figure, and JSON analysis export
 
 ## Direction
