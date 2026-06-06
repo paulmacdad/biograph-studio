@@ -1,6 +1,8 @@
 import { jStat } from 'jstat';
 import {
   BarChart3,
+  Bot,
+  CheckCircle2,
   Download,
   FileJson,
   FileSpreadsheet,
@@ -14,6 +16,7 @@ import {
   Sigma,
   Sparkles,
   Table2,
+  Wand2,
 } from 'lucide-react';
 import type { PointerEvent } from 'react';
 import { Fragment, useMemo, useState } from 'react';
@@ -88,6 +91,13 @@ type TableSetup = {
   xPoints: number;
   paired: boolean;
   repeatedMeasures: boolean;
+};
+type AssistantRecommendation = {
+  graphMode: GraphMode;
+  analysisType: AnalysisType;
+  xScale: AxisScale;
+  showFitCurve: boolean;
+  rationale: string;
 };
 
 const palettes: Record<PaletteId, string[]> = {
@@ -735,6 +745,128 @@ function importSuggestions(clean: CleanResult) {
   return suggestions;
 }
 
+function looksLikeSurvivalTable(clean: CleanResult) {
+  const header = clean.rows[0] ?? [];
+  return header.some((cell) => /time|day|month/i.test(cell)) && header.some((cell) => /event|status|death|failure|censor/i.test(cell));
+}
+
+function looksLikeDoseTable(clean: CleanResult, tableKind: TableKind) {
+  if (tableKind === 'dose') return true;
+  const roleText = [clean.roles.x, clean.roles.y, clean.roles.group, ...(clean.rows[0] ?? [])].filter(Boolean).join(' ');
+  return /dose|conc|concentration|compound|ic50|ec50/i.test(roleText);
+}
+
+function assistantRecommendation(clean: CleanResult, tableKind: TableKind, tableSetup: TableSetup): AssistantRecommendation {
+  if (looksLikeSurvivalTable(clean) || tableKind === 'survival') {
+    return {
+      graphMode: 'survival',
+      analysisType: 'survival',
+      xScale: 'linear',
+      showFitCurve: false,
+      rationale: 'Time/event columns detected, so Kaplan-Meier survival with log-rank testing is the safest default.',
+    };
+  }
+  if (looksLikeDoseTable(clean, tableKind)) {
+    return {
+      graphMode: 'dose',
+      analysisType: 'dose',
+      xScale: 'log10',
+      showFitCurve: true,
+      rationale: 'Dose or concentration data detected, so use a log10 X axis with a fitted response curve.',
+    };
+  }
+  if (clean.roles.x) {
+    return {
+      graphMode: 'line',
+      analysisType: 'linear',
+      xScale: 'linear',
+      showFitCurve: false,
+      rationale: `${clean.roles.x} looks like an X column, so an XY graph with regression is a useful first view.`,
+    };
+  }
+  if (clean.groups.length === 2) {
+    return {
+      graphMode: 'bar',
+      analysisType: tableSetup.paired ? 'paired' : 'welch',
+      xScale: 'linear',
+      showFitCurve: false,
+      rationale: tableSetup.paired ? 'Two paired groups detected, so use a paired t test and show raw points.' : 'Two independent groups detected, so use Welch t test and show raw points.',
+    };
+  }
+  if (clean.groups.length > 2) {
+    return {
+      graphMode: 'bar',
+      analysisType: 'anova',
+      xScale: 'linear',
+      showFitCurve: false,
+      rationale: 'Three or more groups detected, so start with grouped bars/raw points and one-way ANOVA.',
+    };
+  }
+  return {
+    graphMode: 'scatter',
+    analysisType: 'auto',
+    xScale: 'linear',
+    showFitCurve: false,
+    rationale: 'The assistant needs at least two numeric observations or clearer group labels before choosing a stronger default.',
+  };
+}
+
+function assistantContext(clean: CleanResult, settings: GraphSettings, graphMode: GraphMode, analysisType: AnalysisType, tableSetup: TableSetup, recommendation: AssistantRecommendation) {
+  return {
+    importFormat: clean.format,
+    warnings: clean.warnings,
+    roles: clean.roles,
+    groups: clean.groups.map((group) => ({ name: group.name, n: group.values.length })),
+    graphMode,
+    analysisType,
+    tableSetup,
+    figure: {
+      title: settings.title,
+      xLabel: settings.xLabel,
+      yLabel: settings.yLabel,
+      palette: settings.palette,
+      errorBars: settings.errorBars,
+    },
+    recommendation,
+  };
+}
+
+function localAssistantResponse(prompt: string, clean: CleanResult, recommendation: AssistantRecommendation, suggestions: string[]) {
+  const promptLower = prompt.toLowerCase();
+  const lines = [
+    `Detected ${clean.groups.length} data set${clean.groups.length === 1 ? '' : 's'} as ${clean.format.toLowerCase()}.`,
+    `Recommended setup: ${recommendation.graphMode} graph with ${recommendation.analysisType} analysis.`,
+    recommendation.rationale,
+  ];
+  if (promptLower.includes('normal')) lines.push('If the first group is the control, use Normalize to first group before plotting percentage response.');
+  if (promptLower.includes('log') || promptLower.includes('dose') || promptLower.includes('conc')) lines.push('For concentration-response data, keep raw concentration values and use graph-level log10 X scaling so exported data remains interpretable.');
+  if (promptLower.includes('method') || promptLower.includes('paper')) lines.push('Use Draft methods note after choosing the final graph and analysis; it records table shape, graph style, and statistical test.');
+  if (clean.warnings.length) lines.push(`Fix before final export: ${clean.warnings.join(' ')}`);
+  return [...lines, ...suggestions.slice(0, 3)].join('\n');
+}
+
+function buildMethodsText(
+  clean: CleanResult,
+  stats: Summary[],
+  settings: GraphSettings,
+  graphMode: GraphMode,
+  tableSetup: TableSetup,
+  displayedAnalysis: { label: string; p: number; lines: string[] } | null,
+) {
+  const groupText = stats.map((summary) => `${summary.name} n=${summary.n}`).join('; ') || 'No numeric groups detected';
+  const resultText = displayedAnalysis ? `${displayedAnalysis.label} (${pLabel(displayedAnalysis.p)}). ${displayedAnalysis.lines.join(' ')}` : 'No compatible statistical result was computed.';
+  return [
+    `Aim: ${settings.title}.`,
+    '',
+    `Data were imported as ${clean.format}. Groups: ${groupText}.`,
+    `Design recorded in the workbook: ${tableSetup.paired ? 'matched/paired' : 'independent'} values; ${tableSetup.repeatedMeasures ? 'repeated measures across X values' : 'no repeated-measures structure selected'}.`,
+    `Figure: ${graphMode} graph using the ${settings.palette} palette, ${settings.errorBars.toUpperCase()} error bars, ${settings.showPoints ? 'raw points shown' : 'raw points hidden'}, ${settings.showGrid ? 'grid shown' : 'grid hidden'}.`,
+    `Analysis: ${resultText}`,
+    '',
+    'Review before publication: confirm biological vs technical replicates, exclusions, distributional assumptions, and whether multiple-comparison correction matches the experimental question.',
+  ].join('\n');
+}
+
 function applyGraphPreset(preset: GraphPreset, setSetting: <K extends keyof GraphSettings>(key: K, value: GraphSettings[K]) => void) {
   if (preset === 'journal') {
     setSetting('fontSize', 12);
@@ -1278,6 +1410,9 @@ export default function App() {
   const [tableKind, setTableKind] = useState<TableKind>('grouped');
   const [tableSetup, setTableSetup] = useState<TableSetup>(defaultSetupForKind('grouped'));
   const [assistantPrompt, setAssistantPrompt] = useState('Turn this into the right table for a grouped bar graph with raw points.');
+  const [assistantOutput, setAssistantOutput] = useState('Local assistant is ready. Paste data or choose a table type, then ask for a setup, table repair, graph choice, or methods note.');
+  const [assistantStatus, setAssistantStatus] = useState('Local guidance');
+  const [assistantBusy, setAssistantBusy] = useState(false);
   const [labNotes, setLabNotes] = useState('Aim: compare response across conditions.\n\nDesign notes:\n- Check whether replicates are independent biological replicates.\n- Record exclusions before analysis.\n- Export graph and JSON together for reproducibility.');
   const [settings, setSettings] = useState<GraphSettings>(defaultSettings);
   const clean = useMemo(() => parseSmartInput(rawData, settings.palette), [rawData, settings.palette]);
@@ -1290,6 +1425,7 @@ export default function App() {
       : analysis;
   const pairwise = useMemo(() => pairwiseComparisons(clean.groups), [clean.groups]);
   const suggestions = useMemo(() => importSuggestions(clean), [clean]);
+  const recommendation = useMemo(() => assistantRecommendation(clean, tableKind, tableSetup), [clean, tableKind, tableSetup]);
   const setSetting = <K extends keyof GraphSettings>(key: K, value: GraphSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
 
   const exportSvg = () => {
@@ -1327,13 +1463,71 @@ export default function App() {
     setSetting('xScale', tableKind === 'dose' ? 'log10' : 'linear');
     setSetting('showFitCurve', tableKind === 'dose');
   };
+  const applyAssistantRecommendation = () => {
+    setGraphMode(recommendation.graphMode);
+    setAnalysisType(recommendation.analysisType);
+    setSetting('xScale', recommendation.xScale);
+    setSetting('showFitCurve', recommendation.showFitCurve);
+    setSetting('showPoints', true);
+    if (recommendation.graphMode === 'survival') {
+      setSetting('yLabel', 'Survival probability');
+    }
+    if (recommendation.graphMode === 'dose') {
+      setSetting('xLabel', clean.roles.x ?? 'Concentration');
+    }
+    setActiveSheet('graph');
+  };
+  const draftMethodsNote = () => {
+    setLabNotes(buildMethodsText(clean, stats, settings, graphMode, tableSetup, displayedAnalysis));
+    setActiveSheet('notes');
+  };
+  const runAssistant = async () => {
+    const context = assistantContext(clean, settings, graphMode, analysisType, tableSetup, recommendation);
+    const endpoint = import.meta.env.VITE_AI_ASSISTANT_ENDPOINT;
+    setAssistantBusy(true);
+    try {
+      if (endpoint) {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: assistantPrompt, context }),
+        });
+        if (!response.ok) throw new Error(`Assistant endpoint returned ${response.status}`);
+        const payload = (await response.json()) as { message?: string };
+        setAssistantOutput(payload.message || localAssistantResponse(assistantPrompt, clean, recommendation, suggestions));
+        setAssistantStatus('Server AI');
+      } else {
+        setAssistantOutput(localAssistantResponse(assistantPrompt, clean, recommendation, suggestions));
+        setAssistantStatus('Local guidance');
+      }
+    } catch (error) {
+      setAssistantOutput(`${localAssistantResponse(assistantPrompt, clean, recommendation, suggestions)}\n\nServer assistant was unavailable, so this response used local deterministic guidance.`);
+      setAssistantStatus(error instanceof Error ? `Local fallback: ${error.message}` : 'Local fallback');
+    } finally {
+      setAssistantBusy(false);
+    }
+  };
+  const exportAssistantContext = () => {
+    download(
+      'biograph-studio-assistant-context.json',
+      JSON.stringify({ prompt: assistantPrompt, output: assistantOutput, context: assistantContext(clean, settings, graphMode, analysisType, tableSetup, recommendation) }, null, 2),
+      'application/json',
+    );
+  };
 
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
-          <h1>BioGraph Studio</h1>
-          <p>Workbook statistics and publication figures for biological data.</p>
+        <div className="brand-lockup">
+          <div className="brand-mark" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div>
+            <h1>BioGraph Studio</h1>
+            <p>Paste messy lab data. Build clean statistics, figures, and methods notes.</p>
+          </div>
         </div>
         <div className="toolbar">
           <button onClick={() => setRawData(groupedSample)} title="Load grouped sample">
@@ -1496,16 +1690,33 @@ export default function App() {
                 </div>
               </div>
               <div className="assistant-panel">
-                <div>
-                  <span className="eyebrow">Smart import assistant</span>
-                  <strong>Paste anything. Keep the workbook shape familiar.</strong>
-                  <p>This is the front-end contract for a future AI parser: infer roles, clean labels, reshape tables, and explain the statistical consequences before anything is plotted.</p>
+                <div className="assistant-copy">
+                  <span className="eyebrow">BioGraph assistant</span>
+                  <strong>Quiet guidance for table repair, graph choice, and methods text.</strong>
+                  <p>Uses local deterministic guidance now. Set <code>VITE_AI_ASSISTANT_ENDPOINT</code> to route the same context to a server-side AI assistant without exposing a browser key.</p>
                 </div>
-                <label>
+                <div className="assistant-recommendation">
+                  <span className="eyebrow">Suggested setup</span>
+                  <strong>{recommendation.graphMode} graph · {recommendation.analysisType}</strong>
+                  <span>{recommendation.rationale}</span>
+                </div>
+                <label className="assistant-instruction">
                   Assistant instruction
                   <input value={assistantPrompt} onChange={(event) => setAssistantPrompt(event.target.value)} />
                 </label>
                 <div className="assistant-actions">
+                  <button className="primary-action" onClick={runAssistant} disabled={assistantBusy}>
+                    <Bot size={15} />
+                    {assistantBusy ? 'Thinking' : 'Ask assistant'}
+                  </button>
+                  <button onClick={applyAssistantRecommendation}>
+                    <Wand2 size={15} />
+                    Apply setup
+                  </button>
+                  <button onClick={draftMethodsNote}>
+                    <FileText size={15} />
+                    Draft methods
+                  </button>
                   <button onClick={() => setRawData(wideToLong(rawData))}>Wide to long</button>
                   <button onClick={() => setRawData(transposeTable(rawData))}>Transpose</button>
                   <button
@@ -1520,6 +1731,17 @@ export default function App() {
                     Normalize to first group
                   </button>
                   <button onClick={() => setRawData(log10FirstNumericColumn(rawData))}>Log10 X</button>
+                  <button onClick={exportAssistantContext}>
+                    <Download size={15} />
+                    Context JSON
+                  </button>
+                </div>
+                <div className="assistant-output" aria-live="polite">
+                  <div>
+                    <CheckCircle2 size={14} />
+                    <span>{assistantStatus}</span>
+                  </div>
+                  <pre>{assistantOutput}</pre>
                 </div>
               </div>
               <div className="suggestion-list">

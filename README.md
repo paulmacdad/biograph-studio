@@ -15,6 +15,7 @@ This is not a GraphPad Prism clone. It is a legally distinct open tool aimed at 
 - Working layout, notebook, audit-trail, and build-coverage screens
 - Built-in tutorial sheet for grouped graphs, dose-response, Kaplan-Meier, data repair, publication styling, and AI guidance
 - Workbook-style navigator for data, analyses, graphs, layouts, notes, and feature planning
+- Branded dogfooding shell with a quiet BioGraph assistant for setup guidance, table repair, methods notes, and exportable context
 - Dot, bar, box, line, and dose-response SVG plots, including log10 X scaling and smooth fitted curves
 - P-value comparison bars on grouped plots
 - Kaplan-Meier survival plots with number-at-risk table and log-rank result
@@ -22,6 +23,7 @@ This is not a GraphPad Prism clone. It is a legally distinct open tool aimed at 
 - Per-group n, mean, SD, SEM, 95% CI, median, quartiles, min, and max
 - Welch unpaired t test, paired t test, Mann-Whitney test, one-way ANOVA, Kruskal-Wallis test, linear regression, dose-response EC50-style estimates with Hill-slope display, Kaplan-Meier/log-rank, and pairwise Welch comparisons with Holm adjustment
 - Cleaned CSV, SVG figure, and JSON analysis export
+- Optional server-side assistant endpoint via `VITE_AI_ASSISTANT_ENDPOINT`; without it, the app uses deterministic local guidance and exposes no AI key in the browser
 
 ## Direction
 
@@ -46,6 +48,20 @@ npm run dev
 ```
 
 Then open the local URL printed by Vite.
+
+To connect a real AI assistant, provide a server endpoint that accepts:
+
+```json
+{ "prompt": "user instruction", "context": { "importFormat": "...", "groups": [] } }
+```
+
+and returns:
+
+```json
+{ "message": "assistant response" }
+```
+
+The model key must stay on that server, not in Vite/browser environment variables.
 
 ## Next Build Targets
 

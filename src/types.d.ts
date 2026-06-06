@@ -15,3 +15,11 @@ declare module 'jstat' {
     };
   };
 }
+
+interface ImportMetaEnv {
+  readonly VITE_AI_ASSISTANT_ENDPOINT?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}

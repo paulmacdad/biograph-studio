@@ -42,6 +42,11 @@ button:hover {
   color: #155c64;
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .app-shell {
   display: flex;
   flex-direction: column;
@@ -58,6 +63,45 @@ button:hover {
   gap: 18px;
   justify-content: space-between;
   padding: 12px 18px;
+}
+
+.brand-lockup {
+  align-items: center;
+  display: flex;
+  gap: 11px;
+  min-width: 260px;
+}
+
+.brand-mark {
+  align-items: end;
+  background: #155c64;
+  border-radius: 8px;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  height: 38px;
+  justify-content: center;
+  padding: 8px;
+  width: 38px;
+}
+
+.brand-mark span {
+  background: #ffffff;
+  border-radius: 999px;
+  display: block;
+  width: 5px;
+}
+
+.brand-mark span:nth-child(1) {
+  height: 12px;
+}
+
+.brand-mark span:nth-child(2) {
+  height: 22px;
+}
+
+.brand-mark span:nth-child(3) {
+  height: 16px;
 }
 
 .topbar h1 {
@@ -389,17 +433,36 @@ button:hover {
   padding: 12px;
 }
 
-.assistant-panel strong {
+.assistant-panel strong,
+.assistant-recommendation strong {
   display: block;
   font-size: 15px;
   margin-top: 3px;
 }
 
-.assistant-panel p {
+.assistant-panel p,
+.assistant-recommendation span {
   color: #60706a;
   font-size: 13px;
   line-height: 1.45;
   margin: 6px 0 0;
+}
+
+.assistant-panel code {
+  background: #edf3f0;
+  border-radius: 5px;
+  color: #204f55;
+  font-size: 12px;
+  padding: 1px 4px;
+}
+
+.assistant-recommendation {
+  background: #eef5f2;
+  border: 1px solid #cddfd8;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
 }
 
 .assistant-panel label {
@@ -418,6 +481,10 @@ button:hover {
   padding: 7px 9px;
 }
 
+.assistant-instruction {
+  grid-column: 1 / -1;
+}
+
 .assistant-actions {
   display: flex;
   flex-wrap: wrap;
@@ -427,6 +494,34 @@ button:hover {
 
 .assistant-actions button {
   min-height: 32px;
+}
+
+.assistant-output {
+  background: #f7faf8;
+  border: 1px solid #d7dfda;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-column: 1 / -1;
+  padding: 10px;
+}
+
+.assistant-output div {
+  align-items: center;
+  color: #3f5f58;
+  display: flex;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 6px;
+}
+
+.assistant-output pre {
+  color: #3f4b47;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .suggestion-list {
@@ -936,6 +1031,10 @@ select:focus {
   .sheet-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .brand-lockup {
+    min-width: 0;
   }
 
   .analysis-grid,

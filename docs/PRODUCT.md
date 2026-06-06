@@ -17,6 +17,7 @@ The product goal is a free scientific graphing and statistics workbook for biolo
 
 - Messy input handling: paste instrument output, spreadsheet blocks, or badly shaped tables and get suggested repairs.
 - AI-assisted reshaping: "make this a grouped table", "normalize to control", "use dose as X", "make a qPCR fold-change graph".
+- Dogfoodable assistant behavior: local deterministic guidance works immediately, while an optional server-side AI endpoint can replace it without exposing credentials in the browser.
 - Reproducible analysis: every click should become a readable audit trail and optional R/Python script.
 - Better palettes and presets for journals, talks, posters, colourblind safety, and multi-panel figures.
 - Extensible statistical engine using R/Python/WebAssembly rather than being limited to front-end code.
@@ -29,4 +30,4 @@ The product goal is a free scientific graphing and statistics workbook for biolo
 - A graph wizard that asks: data type, biological question, graph family, analysis, styling preset, export target.
 - Direct manipulation of graph elements: click title, axes, legend, point set, bar, or error bar to edit it in the inspector.
 - Project save/load with raw data, transformed data, analyses, graphs, layouts, and notes.
-- Server-side AI assistant with no browser-exposed API key.
+- Server-side AI assistant with no browser-exposed API key, using the current exported assistant context as the request contract.
